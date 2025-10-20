@@ -1,0 +1,160 @@
+Cutadapt Trimming Started: Mon Oct 20 11:25:38 AM PKT 2025
+Input directory: HF
+Output directory: HF/trimmed
+Using 4 threads
+-------------------------------------------------------------
+Processing sample: HF1
+This is cutadapt 4.6 with Python 3.10.19
+Command line parameters: -g ^CCTACGGGNGGCWGCAG -G ^GACTACHVGGGTATCTAATCC -o HF/trimmed/HF1_R1_trimmed.fastq.gz -p HF/trimmed/HF1_R2_trimmed.fastq.gz HF/HF1_1.fastq.gz HF/HF1_2.fastq.gz --minimum-length 200 --discard-untrimmed --cores=4
+Processing paired-end reads on 4 cores ...
+Finished in 0.708 s (5.590 µs/read; 10.73 M reads/minute).
+
+=== Summary ===
+
+Total read pairs processed:            126,584
+  Read 1 with adapter:                 126,329 (99.8%)
+  Read 2 with adapter:                 126,030 (99.6%)
+
+== Read fate breakdown ==
+Pairs that were too short:                   0 (0.0%)
+Pairs discarded as untrimmed:              788 (0.6%)
+Pairs written (passing filters):       125,796 (99.4%)
+
+Total basepairs processed:    76,203,568 bp
+  Read 1:    38,101,784 bp
+  Read 2:    38,101,784 bp
+Total written (filtered):     70,950,276 bp (93.1%)
+  Read 1:    35,726,588 bp
+  Read 2:    35,223,688 bp
+
+=== First read: Adapter 1 ===
+
+Sequence: CCTACGGGNGGCWGCAG; Type: anchored 5'; Length: 17; Trimmed: 126329 times
+
+No. of allowed errors: 1
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+16	761	0.0	1	0 761
+17	125332	0.0	1	124539 793
+18	236	0.0	1	0 236
+
+
+=== Second read: Adapter 2 ===
+
+Sequence: GACTACHVGGGTATCTAATCC; Type: anchored 5'; Length: 21; Trimmed: 126030 times
+
+No. of allowed errors: 2
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+19	127	0.0	1	0 0 127
+20	693	0.0	2	0 688 5
+21	125071	0.0	2	124011 1033 27
+22	139	0.0	2	0 138 1
+✅ Finished HF1
+-------------------------------------------------------------
+Processing sample: HF6
+This is cutadapt 4.6 with Python 3.10.19
+Command line parameters: -g ^CCTACGGGNGGCWGCAG -G ^GACTACHVGGGTATCTAATCC -o HF/trimmed/HF6_R1_trimmed.fastq.gz -p HF/trimmed/HF6_R2_trimmed.fastq.gz HF/HF6_1.fastq.gz HF/HF6_2.fastq.gz --minimum-length 200 --discard-untrimmed --cores=4
+Processing paired-end reads on 4 cores ...
+Finished in 0.704 s (4.998 µs/read; 12.00 M reads/minute).
+
+=== Summary ===
+
+Total read pairs processed:            140,938
+  Read 1 with adapter:                 140,442 (99.6%)
+  Read 2 with adapter:                 139,999 (99.3%)
+
+== Read fate breakdown ==
+Pairs that were too short:                   0 (0.0%)
+Pairs discarded as untrimmed:            1,253 (0.9%)
+Pairs written (passing filters):       139,685 (99.1%)
+
+Total basepairs processed:    84,844,676 bp
+  Read 1:    42,422,338 bp
+  Read 2:    42,422,338 bp
+Total written (filtered):     78,783,744 bp (92.9%)
+  Read 1:    39,671,067 bp
+  Read 2:    39,112,677 bp
+
+=== First read: Adapter 1 ===
+
+Sequence: CCTACGGGNGGCWGCAG; Type: anchored 5'; Length: 17; Trimmed: 140442 times
+
+No. of allowed errors: 1
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+16	785	0.0	1	0 785
+17	139402	0.0	1	138228 1174
+18	255	0.0	1	0 255
+
+
+=== Second read: Adapter 2 ===
+
+Sequence: GACTACHVGGGTATCTAATCC; Type: anchored 5'; Length: 21; Trimmed: 139999 times
+
+No. of allowed errors: 2
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+19	123	0.0	1	0 0 123
+20	800	0.0	2	0 783 17
+21	138911	0.0	2	137236 1632 43
+22	165	0.0	2	0 161 4
+✅ Finished HF6
+-------------------------------------------------------------
+Processing sample: HF8
+This is cutadapt 4.6 with Python 3.10.19
+Command line parameters: -g ^CCTACGGGNGGCWGCAG -G ^GACTACHVGGGTATCTAATCC -o HF/trimmed/HF8_R1_trimmed.fastq.gz -p HF/trimmed/HF8_R2_trimmed.fastq.gz HF/HF8_1.fastq.gz HF/HF8_2.fastq.gz --minimum-length 200 --discard-untrimmed --cores=4
+Processing paired-end reads on 4 cores ...
+Finished in 0.739 s (4.914 µs/read; 12.21 M reads/minute).
+
+=== Summary ===
+
+Total read pairs processed:            150,330
+  Read 1 with adapter:                 149,946 (99.7%)
+  Read 2 with adapter:                 149,642 (99.5%)
+
+== Read fate breakdown ==
+Pairs that were too short:                   0 (0.0%)
+Pairs discarded as untrimmed:            1,028 (0.7%)
+Pairs written (passing filters):       149,302 (99.3%)
+
+Total basepairs processed:    90,498,660 bp
+  Read 1:    45,249,330 bp
+  Read 2:    45,249,330 bp
+Total written (filtered):     84,208,015 bp (93.0%)
+  Read 1:    42,402,335 bp
+  Read 2:    41,805,680 bp
+
+=== First read: Adapter 1 ===
+
+Sequence: CCTACGGGNGGCWGCAG; Type: anchored 5'; Length: 17; Trimmed: 149946 times
+
+No. of allowed errors: 1
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+16	849	0.0	1	0 849
+17	148817	0.0	1	147751 1066
+18	280	0.0	1	0 280
+
+
+=== Second read: Adapter 2 ===
+
+Sequence: GACTACHVGGGTATCTAATCC; Type: anchored 5'; Length: 21; Trimmed: 149642 times
+
+No. of allowed errors: 2
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+19	198	0.0	1	0 0 198
+20	870	0.0	2	0 853 17
+21	148430	0.0	2	147183 1221 26
+22	144	0.0	2	0 141 3
+✅ Finished HF8
+-------------------------------------------------------------
+All samples processed successfully! 🎉
+Trimming completed at: Mon Oct 20 11:25:41 AM PKT 2025

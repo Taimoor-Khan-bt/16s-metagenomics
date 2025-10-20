@@ -1,0 +1,33 @@
+# R specific
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+*.Rproj.user/
+*.Rcheck/
+.Rproj.user
+
+# Large data files
+*.fastq.gz
+*.fasta
+*.fna
+*.fa
+
+# Output files
+output/*
+!output/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.Renviron
+renv/
+
+# Temporary files
+*.swp
+*~
+*.bak
+*.tmp
