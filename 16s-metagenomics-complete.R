@@ -197,11 +197,17 @@ saveRDS(ps, file.path(output_dir, "phyloseq_object_raw.rds"))
 # ==================================================================
 cat("Processing and normalizing data...\n")
 
-# Remove non-bacterial sequences and unclassified sequences at Phylum level
-ps_filtered <- subset_taxa(ps, 
-                         Kingdom == "Bacteria" & 
-                         !is.na(Phylum) & 
-                         !Phylum %in% c("", "uncharacterized"))
+# Remove non-bacterial sequences, chloroplast and mitochondria; require known Phylum
+ps_filtered <- subset_taxa(ps,
+  Kingdom == "Bacteria" &
+  !is.na(Phylum) & Phylum != "" & Phylum != "uncharacterized" &
+  (is.na(Order) | Order != "Chloroplast") &
+  (is.na(Family) | Family != "Mitochondria")
+)
+
+# Save a brief taxa summary after filtering
+tax_after <- as.data.frame(tax_table(ps_filtered))
+write.csv(as.data.frame(table(tax_after$Phylum)), file.path(output_dir, "phylum_counts_after_filter.csv"), row.names = FALSE)
 
 # Rarefy to even depth
 sample_sums_df <- data.frame(Sum = sample_sums(ps_filtered))
@@ -215,23 +221,43 @@ saveRDS(ps_rarefied, file.path(output_dir, "phyloseq_rarefied.rds"))
 # ==================================================================
 cat("Performing basic analysis...\n")
 
-# Alpha diversity metrics
-alpha_div <- data.frame(
-  Observed = estimate_richness(ps_rarefied, measures = "Observed"),
-  Shannon = estimate_richness(ps_rarefied, measures = "Shannon"),
-  InvSimpson = estimate_richness(ps_rarefied, measures = "InvSimpson")
-)
-write.csv(alpha_div, file.path(output_dir, "alpha_diversity.csv"))
+alpha_df <- estimate_richness(ps_rarefied, measures = c("Observed", "Shannon", "InvSimpson"))
+alpha_df$Sample <- rownames(alpha_df)
+if (!is.null(sample_data(ps_rarefied, errorIfNULL = FALSE))) {
+  md_alpha <- as.data.frame(sample_data(ps_rarefied))
+  md_alpha$Sample <- rownames(md_alpha)
+  alpha_df <- merge(alpha_df, md_alpha, by = "Sample", all.x = TRUE)
+}
+write.csv(alpha_df, file.path(output_dir, "alpha_diversity.csv"), row.names = FALSE)
 
 # Alpha diversity plots
-alpha_plot <- ggplot(gather(alpha_div), aes(x = key, y = value)) +
+alpha_long <- tidyr::pivot_longer(alpha_df, cols = c("Observed","Shannon","InvSimpson"), names_to = "Metric", values_to = "Value")
+alpha_plot <- ggplot(alpha_long, aes(x = Metric, y = Value)) +
   geom_boxplot(fill = "lightblue", alpha = 0.7) +
   geom_jitter(width = 0.2, alpha = 0.5) +
   theme_minimal() +
   labs(x = "Metric", y = "Value", title = "Alpha Diversity Metrics") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
 ggsave(file.path(output_dir, "alpha_diversity_plot.pdf"), alpha_plot, width = 8, height = 6)
+ggsave(file.path(output_dir, "alpha_diversity_plot.tiff"), alpha_plot, width = 8, height = 6, dpi = 600)
+
+# Alpha diversity stats by Group (if present)
+if ("Group" %in% colnames(alpha_df)) {
+  kw_obs <- kruskal.test(Observed ~ Group, data = alpha_df)
+  kw_sha <- kruskal.test(Shannon ~ Group, data = alpha_df)
+  kw_inv <- kruskal.test(InvSimpson ~ Group, data = alpha_df)
+  sink(file.path(output_dir, "alpha_diversity_stats.txt"))
+  cat("Kruskal–Wallis tests by Group\n\n")
+  print(kw_obs); cat("\n"); print(kw_sha); cat("\n"); print(kw_inv); cat("\n")
+  sink()
+  # Pairwise Wilcoxon with BH correction
+  pw_obs <- pairwise.wilcox.test(alpha_df$Observed, alpha_df$Group, p.adjust.method = "BH")
+  pw_sha <- pairwise.wilcox.test(alpha_df$Shannon, alpha_df$Group, p.adjust.method = "BH")
+  pw_inv <- pairwise.wilcox.test(alpha_df$InvSimpson, alpha_df$Group, p.adjust.method = "BH")
+  capture.output(pw_obs, file = file.path(output_dir, "alpha_pairwise_observed.txt"))
+  capture.output(pw_sha, file = file.path(output_dir, "alpha_pairwise_shannon.txt"))
+  capture.output(pw_inv, file = file.path(output_dir, "alpha_pairwise_invsimpson.txt"))
+}
 
 # Beta diversity (Bray-Curtis)
 bray_dist <- phyloseq::distance(ps_rarefied, method = "bray")
@@ -263,13 +289,27 @@ if ("Group" %in% colnames(pcoa_df)) {
 }
 
 ggsave(file.path(output_dir, "beta_diversity_pcoa.pdf"), pcoa_plot, width = 8, height = 6)
+ggsave(file.path(output_dir, "beta_diversity_pcoa.tiff"), pcoa_plot, width = 8, height = 6, dpi = 600)
+
+# PERMANOVA and dispersion if Group present
+if (!is.null(sample_data(ps_rarefied, errorIfNULL = FALSE))) {
+  md <- as.data.frame(sample_data(ps_rarefied))
+  if ("Group" %in% colnames(md)) {
+    ad <- vegan::adonis2(as.matrix(bray_dist) ~ Group, data = md, permutations = 999)
+    capture.output(ad, file = file.path(output_dir, "permanova_group.txt"))
+    # Test for homogeneity of dispersion
+    bd <- vegan::betadisper(bray_dist, md$Group)
+    bd_perm <- vegan::permutest(bd, permutations = 999)
+    capture.output(list(betadisper = bd, permutest = bd_perm), file = file.path(output_dir, "betadisper_group.txt"))
+  }
+}
 
 # Taxonomic composition at Phylum level
 tax_phylum <- tax_glom(ps_rarefied, taxrank = "Phylum")
 phylum_counts <- transform_sample_counts(tax_phylum, function(x) x/sum(x))
 phylum_data <- psmelt(phylum_counts)
 
-# Top 10 phyla plot
+# Top 10 phyla plot (sample-wise)
 top_phyla <- phylum_data %>%
   group_by(Phylum) %>%
   summarise(mean_abundance = mean(Abundance)) %>%
@@ -285,6 +325,55 @@ phylum_plot <- ggplot(subset(phylum_data, Phylum %in% top_phyla$Phylum),
   labs(x = "Sample", y = "Relative Abundance", title = "Top 10 Phyla Composition")
 
 ggsave(file.path(output_dir, "phylum_composition.pdf"), phylum_plot, width = 10, height = 6)
+ggsave(file.path(output_dir, "phylum_composition.tiff"), phylum_plot, width = 10, height = 6, dpi = 600)
+
+# Group-aggregated composition (if Group present)
+if (!is.null(sample_data(ps_rarefied, errorIfNULL = FALSE))) {
+  md <- as.data.frame(sample_data(ps_rarefied))
+  if ("Group" %in% colnames(md)) {
+    ps_grouped <- ps_rarefied %>%
+      merge_samples("Group") %>%
+      transform_sample_counts(function(x) x / sum(x))
+    phylum_grp <- psmelt(tax_glom(ps_grouped, taxrank = "Phylum"))
+    phylum_grp_plot <- ggplot(phylum_grp, aes(x = Sample, y = Abundance, fill = Phylum)) +
+      geom_bar(stat = "identity") +
+      scale_fill_brewer(palette = "Set3") +
+      theme_minimal() +
+      labs(x = "Group", y = "Relative Abundance", title = "Phylum Composition by Group")
+    ggsave(file.path(output_dir, "phylum_composition_by_group.tiff"), phylum_grp_plot, width = 8, height = 6, dpi = 600)
+  }
+}
+
+# Rarefaction curves from pre-rarefaction counts
+otu_mat_full <- as(otu_table(ps_filtered), "matrix")
+if (!taxa_are_rows(ps_filtered)) otu_mat_full <- t(otu_mat_full)
+pdf(file.path(output_dir, "rarefaction_curves.pdf"), width = 10, height = 8)
+suppressWarnings(vegan::rarecurve(otu_mat_full, step = 100, cex = 0.5, label = TRUE))
+dev.off()
+
+# Optional: ANCOM-BC differential abundance by Group
+if (requireNamespace("ANCOMBC", quietly = TRUE)) {
+  if (!is.null(sample_data(ps_filtered, errorIfNULL = FALSE))) {
+    md <- as.data.frame(sample_data(ps_filtered))
+    if ("Group" %in% colnames(md) && length(unique(md$Group)) > 1) {
+      suppressMessages({
+        res <- try(ANCOMBC::ancombc2(data = ps_filtered, formula = "Group", p_adj_method = "BH", lib_cut = 0, prv_cut = 0.1, 
+                                     group = "Group", struc_zero = TRUE, neg_lb = TRUE), silent = TRUE)
+      })
+      if (!inherits(res, "try-error")) {
+        # Extract results table
+        tt <- res$res
+        write.csv(tt, file.path(output_dir, "ancombc_results.csv"), row.names = TRUE)
+        # Simple volcano plot if lfc/pvals exist
+        if (all(c("lfc","`p_val`","`q_val`") %in% colnames(tt[[1]]))) {
+          # Skipping complex plotting due to nested results structure differences across versions
+        }
+      } else {
+        message("ANCOM-BC failed; skipping differential abundance.")
+      }
+    }
+  }
+}
 
 # ==================================================================
 # 4. Advanced Analysis
