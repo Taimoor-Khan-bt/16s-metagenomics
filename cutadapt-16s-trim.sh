@@ -29,7 +29,7 @@ ERROR_RATE=0.1        # Maximum error rate for matching primers
 
 # Performance settings
 THREADS=$(nproc)      # Use all available CPU cores
-MAX_MEMORY="4G"       # Maximum memory usage
+# Note: cutadapt does not support a memory limit flag; it will use available memory.
 
 # ============================================================
 # Input Validation
@@ -86,6 +86,8 @@ for R1 in ${INPUT_DIR}/*_1.fastq.gz; do
     echo "Processing sample: ${SAMPLE}" | tee -a "$LOGFILE"
     
     # Run cutadapt with comprehensive parameters
+    # Use a subshell and capture stderr/stdout; do not exit the whole script on failure
+    set +e
     CUTADAPT_OUTPUT=$(cutadapt \
         -g "${FWD_PRIMER}" \
         -G "${REV_PRIMER}" \
@@ -95,28 +97,51 @@ for R1 in ${INPUT_DIR}/*_1.fastq.gz; do
         --quality-cutoff "${MIN_QUALITY}" \
         --error-rate "${ERROR_RATE}" \
         --cores="${THREADS}" \
-        --memory="${MAX_MEMORY}" \
         --discard-untrimmed \
         --trim-n \
         --max-n 0 \
         "$R1" "$R2" 2>&1)
+    CUTADAPT_STATUS=$?
+    set -e
+
+    if [[ $CUTADAPT_STATUS -ne 0 ]]; then
+        echo "❌ cutadapt failed for sample ${SAMPLE}. See details below:" | tee -a "$LOGFILE"
+        echo "$CUTADAPT_OUTPUT" | tee -a "$LOGFILE"
+        echo "Skipping ${SAMPLE}." | tee -a "$LOGFILE"
+        echo "----------------------------------------" >> "$LOGFILE"
+        continue
+    fi
     
-    # Extract statistics
-    INPUT_READS=$(echo "$CUTADAPT_OUTPUT" | grep "Total read pairs processed:" | grep -o "[0-9,]*" | tr -d ',')
-    PRIMER_FOUND=$(echo "$CUTADAPT_OUTPUT" | grep "Reads with adapters:" | grep -o "[0-9,]*" | tr -d ',')
-    PASSED_FILTERS=$(echo "$CUTADAPT_OUTPUT" | grep "Pairs written (passing filters):" | grep -o "[0-9,]*" | tr -d ',')
+    # Extract statistics (robust parsing for cutadapt 4.x paired-end output)
+    INPUT_READS=$(echo "$CUTADAPT_OUTPUT" | sed -n 's/.*Total read pairs processed:[[:space:]]*\([0-9][0-9,]*\).*/\1/p' | tr -d ',' | head -n1)
+    PASSED_FILTERS=$(echo "$CUTADAPT_OUTPUT" | sed -n 's/.*Pairs written (passing filters):[[:space:]]*\([0-9][0-9,]*\).*/\1/p' | tr -d ',' | head -n1)
+    READ1_ADAPTER=$(echo "$CUTADAPT_OUTPUT" | sed -n 's/.*Read 1 with adapter:[[:space:]]*\([0-9][0-9,]*\).*/\1/p' | tr -d ',' | head -n1)
+    READ2_ADAPTER=$(echo "$CUTADAPT_OUTPUT" | sed -n 's/.*Read 2 with adapter:[[:space:]]*\([0-9][0-9,]*\).*/\1/p' | tr -d ',' | head -n1)
+    # Fallbacks to zero if empty
+    INPUT_READS=${INPUT_READS:-0}
+    PASSED_FILTERS=${PASSED_FILTERS:-0}
+    READ1_ADAPTER=${READ1_ADAPTER:-0}
+    READ2_ADAPTER=${READ2_ADAPTER:-0}
     
-    # Calculate percentage
-    PERCENT_KEPT=$(awk "BEGIN {print ($PASSED_FILTERS/$INPUT_READS)*100}")
+    # Calculate percentage (avoid divide-by-zero)
+    if [[ "$INPUT_READS" -gt 0 ]]; then
+        PERCENT_KEPT=$(awk -v a="$PASSED_FILTERS" -v b="$INPUT_READS" 'BEGIN {printf "%.2f", (a/b)*100}')
+    else
+        PERCENT_KEPT="0.00"
+    fi
     
     # Log statistics
+    # For primer/adapters found, record sum of Read1+Read2 with adapters
+    PRIMER_FOUND=$((READ1_ADAPTER + READ2_ADAPTER))
     echo -e "${SAMPLE}\t${INPUT_READS}\t${PRIMER_FOUND}\t${PASSED_FILTERS}\t${PERCENT_KEPT}" >> "$STATS_FILE"
     
     # Add to log
     {
         echo "Sample ${SAMPLE} completed:"
         echo "  Input reads: ${INPUT_READS}"
-        echo "  Primer found: ${PRIMER_FOUND}"
+    echo "  Read1 with adapter: ${READ1_ADAPTER}"
+    echo "  Read2 with adapter: ${READ2_ADAPTER}"
+    echo "  Primer (adapters) found total: ${PRIMER_FOUND}"
         echo "  Passed filters: ${PASSED_FILTERS}"
         echo "  Percent kept: ${PERCENT_KEPT}%"
         echo "----------------------------------------"
