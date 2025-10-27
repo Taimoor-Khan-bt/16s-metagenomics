@@ -431,3 +431,30 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Publication-ready figures (saved at 600 dpi)
+
+The pipeline exports high-resolution figures suitable for publication:
+
+- output/alpha_diversity_plot.tiff
+   - Box+jitter plots for Observed, Shannon, and InvSimpson diversity; can be stratified by Group (Host) when metadata is present.
+- output/beta_diversity_pcoa.tiff
+   - PCoA of Bray–Curtis distances; points colored by Group (Host) if available.
+- output/phylum_composition.tiff
+   - Stacked bar plot of relative abundance (Top phyla) per sample.
+- output/phylum_composition_by_group.tiff
+   - Group-aggregated composition (samples merged by Group, then normalized).
+- output/rarefaction_curves.pdf
+   - Sample-wise rarefaction curves from pre-rarefaction counts.
+
+Statistical summaries:
+- output/alpha_diversity_stats.txt – Kruskal–Wallis tests by Group (+ pairwise Wilcoxon in separate files)
+- output/permanova_group.txt – PERMANOVA on Bray–Curtis by Group
+- output/betadisper_group.txt – Test for homogeneity of dispersion across Groups
+
+Core data objects and QC:
+- output/phyloseq_object_raw.rds, output/phyloseq_rarefied.rds – phyloseq objects for downstream work
+- output/filtering_summary.csv, output/read_tracking.csv – DADA2 filtering and read flow
+- output/seq_length_summary.txt – ASV sequence-length distribution to guide optional length filtering
+
+Tip: Ensure `metadata.csv` contains Sample IDs matching FASTQ basenames (e.g., HF1) and a Group column (e.g., Host: Buffalo/Cow/Goat) for group-wise plots and tests.
