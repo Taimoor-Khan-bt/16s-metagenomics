@@ -351,8 +351,8 @@ If you encounter issues:
 ## 🚀 Usage
 
 1. **Basic Analysis Pipeline**
-   ```R
-   source("16s-metagenomics.R")
+   ```bash
+   Rscript 16s-metagenomics-complete.R
    ```
 
 2. **Advanced Analysis**
@@ -370,7 +370,7 @@ If you encounter issues:
 ```
 .
 ├── 16s_pipeline.yaml          # Pipeline configuration
-├── 16s-metagenomics.R        # Core analysis script
+├── 16s-metagenomics-complete.R  # Core analysis script (single entrypoint)
 ├── 16s-metagenomics-vis.R    # Static visualization script
 ├── 16s-metagenomics-advanced.R # Advanced analysis script
 ├── 16s-metagenomics-interactive.R # Interactive visualization script

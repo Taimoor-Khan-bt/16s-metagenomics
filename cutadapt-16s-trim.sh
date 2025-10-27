@@ -23,7 +23,7 @@ FWD_PRIMER="GTGYCAGCMGCCGCGGTAA"     # 515F primer
 REV_PRIMER="GGACTACNVGGGTWTCTAAT"    # 806R primer
 
 # Quality thresholds
-MIN_LENGTH=200         # Minimum length after trimming
+MIN_LENGTH=100         # Minimum length after trimming (set for 2x150bp reads)
 MIN_QUALITY=20        # Minimum quality score
 ERROR_RATE=0.1        # Maximum error rate for matching primers
 

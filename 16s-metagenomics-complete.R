@@ -47,11 +47,12 @@ cat("🔍 Starting DADA2 processing pipeline...\n")
 
 # File paths
 path <- "HF/trimmed"
-fnFs <- sort(list.files(path, pattern="_R1_trimmed.fastq", full.names = TRUE))
-fnRs <- sort(list.files(path, pattern="_R2_trimmed.fastq", full.names = TRUE))
+# Match only the expected gzipped files to avoid accidental suffix issues
+fnFs <- sort(list.files(path, pattern = "_R1_trimmed\\.fastq\\.gz$", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern = "_R2_trimmed\\.fastq\\.gz$", full.names = TRUE))
 
-# Extract sample names
-sample.names <- sub("_R1_trimmed.fastq", "", basename(fnFs))
+# Extract sample names robustly (remove exact suffix)
+sample.names <- sub("_R1_trimmed\\.fastq\\.gz$", "", basename(fnFs))
 
 # Quality filter and trim
 cat("Filtering and trimming reads...\n")
@@ -60,12 +61,32 @@ filtRs <- file.path(output_dir, "filtered", paste0(sample.names, "_R_filt.fastq.
 
 dir.create(file.path(output_dir, "filtered"), recursive = TRUE, showWarnings = FALSE)
 
-out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs,
-                    maxN=0, maxEE=c(2,2), truncQ=2,
-                    minLen=50, rm.phix=TRUE,
-                    compress=TRUE, multithread=TRUE)
+out <- filterAndTrim(
+  fnFs, filtFs,
+  fnRs, filtRs,
+  truncLen = c(0, 0),          # reads already primer-trimmed by cutadapt
+  maxEE = c(3, 5),             # relax to retain more reads
+  truncQ = 2,
+  minLen = 100,                # drop extremely short reads only
+  rm.phix = TRUE,
+  compress = TRUE,
+  multithread = TRUE
+)
 
 write.csv(out, file.path(output_dir, "filtering_summary.csv"))
+
+# Keep only samples that produced filtered files (some may have been dropped entirely)
+keep <- file.exists(filtFs) & file.exists(filtRs)
+if (!all(keep)) {
+  dropped <- sample.names[!keep]
+  warning(sprintf("Some samples had no reads pass the filter and were dropped: %s", paste(dropped, collapse = ", ")))
+  sample.names <- sample.names[keep]
+  filtFs <- filtFs[keep]
+  filtRs <- filtRs[keep]
+}
+if (length(filtFs) == 0) {
+  stop("No filtered read files were generated. Consider relaxing filter parameters (e.g., increase maxEE, lower truncQ, or adjust minLen).")
+}
 
 # Learn error rates
 cat("Learning error rates...\n")
@@ -89,6 +110,13 @@ write.csv(dim(seqtab), file.path(output_dir, "seqtab_dimensions.csv"))
 cat("Removing chimeras...\n")
 seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE)
 write.csv(dim(seqtab.nochim), file.path(output_dir, "seqtab_nochim_dimensions.csv"))
+# Summarize ASV lengths to guide optional length filtering
+asv_lengths <- nchar(colnames(seqtab.nochim))
+# Write a simple summary to text to avoid data.frame/dimname issues
+sink(file.path(output_dir, "seq_length_summary.txt"))
+cat("ASV length summary (nchar of sequences)\n\n")
+print(summary(asv_lengths))
+sink()
 
 # Track reads through pipeline
 getN <- function(x) sum(getUniques(x))
@@ -100,6 +128,10 @@ track <- cbind(out,
 colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
 rownames(track) <- sample.names
 write.csv(track, file.path(output_dir, "read_tracking.csv"))
+
+if (ncol(seqtab.nochim) == 0) {
+  stop("No ASVs after chimera removal. Check trimming/filtering parameters or disable strict filters.")
+}
 
 # Assign taxonomy
 cat("Assigning taxonomy...\n")
@@ -117,6 +149,25 @@ ps <- phyloseq(
   otu_table(seqtab.nochim, taxa_are_rows=FALSE),
   tax_table(taxa)
 )
+
+# Attach sample metadata if available
+if (file.exists("metadata.csv")) {
+  meta <- tryCatch(read.csv("metadata.csv", row.names = 1, check.names = FALSE), error = function(e) NULL)
+  if (!is.null(meta)) {
+    # Keep only samples present in the phyloseq object and order accordingly
+    common_samples <- intersect(sample_names(ps), rownames(meta))
+    if (length(common_samples) > 0) {
+      meta_sub <- meta[common_samples, , drop = FALSE]
+      # Reorder rows to match sample order in ps
+      meta_sub <- meta_sub[sample_names(ps), , drop = FALSE]
+      ps <- merge_phyloseq(ps, sample_data(meta_sub))
+    } else {
+      warning("metadata.csv found, but sample IDs do not match trimmed FASTQ sample names. Skipping metadata merge.")
+    }
+  } else {
+    warning("Unable to read metadata.csv. Skipping metadata merge.")
+  }
+}
 
 # Add phylogenetic tree if phangorn is available
 if (requireNamespace("phangorn", quietly = TRUE)) {
@@ -186,13 +237,30 @@ ggsave(file.path(output_dir, "alpha_diversity_plot.pdf"), alpha_plot, width = 8,
 bray_dist <- phyloseq::distance(ps_rarefied, method = "bray")
 pcoa <- ordinate(ps_rarefied, method = "PCoA", distance = bray_dist)
 
-# PCoA plot
-pcoa_plot <- ggplot(data.frame(pcoa$vectors), aes(x = Axis.1, y = Axis.2)) +
-  geom_point(size = 3, alpha = 0.7) +
-  theme_minimal() +
-  labs(x = paste0("PC1 (", round(pcoa$values$Relative_eig[1] * 100, 1), "%)"),
-       y = paste0("PC2 (", round(pcoa$values$Relative_eig[2] * 100, 1), "%)"),
-       title = "PCoA of Bray-Curtis Distances")
+# PCoA plot (color by Group if available)
+pcoa_df <- data.frame(pcoa$vectors)
+pcoa_df$Sample <- rownames(pcoa_df)
+if (!is.null(sample_data(ps_rarefied, errorIfNULL = FALSE))) {
+  meta_df <- as.data.frame(sample_data(ps_rarefied))
+  meta_df$Sample <- rownames(meta_df)
+  pcoa_df <- merge(pcoa_df, meta_df, by = "Sample", all.x = TRUE)
+}
+
+if ("Group" %in% colnames(pcoa_df)) {
+  pcoa_plot <- ggplot(pcoa_df, aes(x = Axis.1, y = Axis.2, color = Group)) +
+    geom_point(size = 3, alpha = 0.9) +
+    theme_minimal() +
+    labs(x = paste0("PC1 (", round(pcoa$values$Relative_eig[1] * 100, 1), "%)"),
+         y = paste0("PC2 (", round(pcoa$values$Relative_eig[2] * 100, 1), "%)"),
+         title = "PCoA of Bray-Curtis Distances")
+} else {
+  pcoa_plot <- ggplot(pcoa_df, aes(x = Axis.1, y = Axis.2)) +
+    geom_point(size = 3, alpha = 0.9) +
+    theme_minimal() +
+    labs(x = paste0("PC1 (", round(pcoa$values$Relative_eig[1] * 100, 1), "%)"),
+         y = paste0("PC2 (", round(pcoa$values$Relative_eig[2] * 100, 1), "%)"),
+         title = "PCoA of Bray-Curtis Distances")
+}
 
 ggsave(file.path(output_dir, "beta_diversity_pcoa.pdf"), pcoa_plot, width = 8, height = 6)
 
