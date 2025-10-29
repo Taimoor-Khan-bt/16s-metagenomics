@@ -1,33 +1,35 @@
 # 16s-metagenomics – Release Notes
 
-## v1.0.0 (2025-10-28)
+## v2.0.0 (2025-10-30)
 
-First public release of the 16S rRNA metagenomics analysis pipeline.
+Second public release: modular, config-driven pipeline with unified visualizations and cohort-scoped outputs.
 
 Highlights
-- Single entrypoint script: `16s-metagenomics-complete.R`
-- Robust trimming with `cutadapt-16s-trim.sh` (paired-end, primer-aware) and detailed trimming stats
-- DADA2-based denoising with relaxed, cutadapt-aware filtering (no hard truncLen; maxEE tuned; minLen=100)
-- SILVA taxonomy assignment + optional species-level assignment
-- Phyloseq objects saved (`phyloseq_object_raw.rds`, `phyloseq_rarefied.rds`)
-- Contaminant filtering (non-Bacteria, Chloroplast, Mitochondria)
-- Alpha/beta diversity with statistical testing (Kruskal–Wallis, pairwise Wilcoxon; PERMANOVA + dispersion)
-- Publication-ready figures (TIFF, 600 dpi)
-- Rarefaction curves and sequence-length summary to guide filtering
+- Modular runner: `scripts/runner.R` orchestrates setup → preprocessing → analysis → visualization via `config/config.yaml`.
+- Unified figures: single `scripts/visualization.R` controls all plots with `plots.enable` toggles (alpha, composition, heatmap, ordination, phylogenetic trees, per-sample panels).
+- Cohort-scoped outputs: results saved under `output/<cohort>/{trimmed,filtered,analysis,visualizations}`; cohort defaults to `basename(io.input_dir)`.
+- Optional tree building: DECIPHER alignment + phangorn NJ→ML (GTR+G+I) with circular/rectangular plots (ggtree).
+- Warning hygiene: suppress non-actionable warnings; retain only upstream package deprecations.
+- Documentation: README rewritten with quick start, configuration essentials, outputs, and biological interpretation.
 
-Inputs
-- FASTQ files: `HF/*_1.fastq.gz`, `HF/*_2.fastq.gz`
-- Metadata: `metadata.csv` with columns: Sample, Insect, Host, Extraction, Group
+Breaking changes
+- Legacy monolithic scripts removed: `16s-metagenomics-complete.R`, `16s-metagenomics.R`, `16s_pipeline.yaml`.
+- Visualization split replaced by unified `scripts/visualization.R`; old helpers removed.
+- Output layout changed to cohort-scoped directories; scripts and config paths updated.
 
-Key outputs
-- Trimming: `HF/trimmed/trimming_statistics.tsv`, `HF/trimmed/cutadapt_summary.log`
-- DADA2/QC: `output/filtering_summary.csv`, `output/read_tracking.csv`, `output/seq_length_summary.txt`
-- Diversity: `output/alpha_diversity.csv`, `output/alpha_diversity_plot.tiff`, `output/beta_diversity_pcoa.tiff`
-- Stats: `output/alpha_diversity_stats.txt`, `output/permanova_group.txt`, `output/betadisper_group.txt`
-- Composition: `output/phylum_composition.tiff`, `output/phylum_composition_by_group.tiff`
-- Rarefaction: `output/rarefaction_curves.pdf`
-- Objects: `output/phyloseq_object_raw.rds`, `output/phyloseq_rarefied.rds`
+Upgrade notes
+- Copy and edit `config/config.yaml` for your study; set `io.input_dir` and `amplicon.taxonomy` file paths.
+- Use `plots.enable` toggles to customize figures; set `amplicon.phylogeny.build_tree: true` to enable tree building.
+- Run via `Rscript scripts/runner.R --config config/config.yaml`. Optionally set `project.first_run: true` on new machines.
 
-Notes
-- If you install `phangorn`, the pipeline can construct a phylogenetic tree and enable UniFrac.
-- Optional differential abundance via ANCOM-BC will run automatically if the package is installed.
+## v1.0.0 (2025-10-28)
+
+Initial public release of the 16S rRNA metagenomics analysis pipeline (monolithic script).
+
+Highlights
+- Single entrypoint: `16s-metagenomics-complete.R`
+- Robust cutadapt-based primer trimming
+- DADA2 denoising with relaxed, cutadapt-aware filtering (no hard truncLen; tuned maxEE; minLen=100)
+- SILVA taxonomy assignment (+ optional species)
+- Phyloseq objects saved; alpha/beta diversity with statistical testing
+- Publication-ready figures (TIFF, 600 dpi); rarefaction and length summaries
