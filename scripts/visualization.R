@@ -30,6 +30,12 @@ suppressPackageStartupMessages({
   } else {
     message("[viz] Optional package 'ggtext' not installed; continuing without enhanced text rendering.")
   }
+  # ggpubr for statistical annotations
+  if (requireNamespace("ggpubr", quietly = TRUE)) {
+    library(ggpubr)
+  } else {
+    message("[viz] Optional package 'ggpubr' not installed; statistical annotations will be skipped.")
+  }
 })
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -193,6 +199,10 @@ plot_alpha_diversity <- function(ps, cfg, outdir) {
     group_col <- cfg$metadata$group_column %||% "Group"
     # Merge by id_col
     df_alpha <- merge(df_alpha, meta, by = id_col, all.x = TRUE)
+    
+    # Check if we have ggpubr for statistical tests
+    has_ggpubr <- requireNamespace("ggpubr", quietly = TRUE)
+    n_groups <- length(unique(df_alpha[[group_col]]))
 
     for (meas in measures) {
       # Create transformed column with valid name
@@ -212,9 +222,38 @@ plot_alpha_diversity <- function(ps, cfg, outdir) {
         plot_theme(cfg) +
         labs(title = paste(meas, "Diversity"),
              subtitle = paste("N =", nrow(df_alpha), "samples"),
-             x = group_col, y = y_label,
-             caption = "Boxplots show median and IQR; points are individual samples") +
+             x = group_col, y = y_label) +
         theme(legend.position = "none")  # Remove redundant legend when x-axis shows groups
+      
+      # Add statistical comparisons if ggpubr available and multiple groups
+      if (has_ggpubr && n_groups >= 2) {
+        # Choose test based on number of groups
+        test_method <- if (n_groups == 2) "wilcox.test" else "kruskal.test"
+        
+        # Add pairwise comparisons for 2-4 groups; overall p-value for more
+        if (n_groups <= 4) {
+          p <- p + ggpubr::stat_compare_means(
+            method = test_method,
+            comparisons = if (n_groups == 2) list(unique(df_alpha[[group_col]])) else NULL,
+            label = "p.signif",
+            hide.ns = FALSE,
+            bracket.size = 0.4,
+            tip.length = 0.02
+          )
+        } else {
+          # For many groups, just show overall test result
+          p <- p + ggpubr::stat_compare_means(
+            method = test_method,
+            label.y.npc = 0.95,
+            label.x.npc = 0.5
+          )
+        }
+        caption_text <- paste0("Statistical test: ", test_method, "; ns: p>0.05, *: p≤0.05, **: p≤0.01, ***: p≤0.001, ****: p≤0.0001")
+      } else {
+        caption_text <- "Boxplots show median and IQR; points are individual samples"
+      }
+      
+      p <- p + labs(caption = caption_text)
       save_plot(p, file.path(outdir, paste0("alpha_", tolower(meas), "_boxplot.tiff")), cfg)
     }
   }, silent = FALSE)  # Show errors for debugging
@@ -415,7 +454,7 @@ plot_phylo_overview <- function(ps, cfg, outdir, en) {
   subtitle_text <- paste(nrow(df), "ASVs from", n_phyla, "phyla; sized by log abundance")
 
   if (isTRUE(en$tree_rectangular)) {
-    p1 <- ggtree(tree, layout = "rectangular", size = 0.4) %<+% df +
+    p1 <- ggtree(tree, layout = "rectangular", linewidth = 0.4) %<+% df +
       geom_tippoint(aes(size = AbundanceScaled, color = Phylum), alpha = 0.8) +
       scale_color_manual(values = palette_vals(n_phyla, cfg)) +
       scale_size_continuous(range = c(1, 4)) +
@@ -430,7 +469,7 @@ plot_phylo_overview <- function(ps, cfg, outdir, en) {
   }
 
   if (isTRUE(en$tree_circular)) {
-    p2 <- ggtree(tree, layout = "circular", size = 0.3) %<+% df +
+    p2 <- ggtree(tree, layout = "circular", linewidth = 0.3) %<+% df +
       geom_tippoint(aes(size = AbundanceScaled, color = Phylum), alpha = 0.75) +
       scale_color_manual(values = palette_vals(n_phyla, cfg)) +
       scale_size_continuous(range = c(1, 4)) +
