@@ -12,6 +12,118 @@ suppressPackageStartupMessages({
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# --- metadata helpers ----------------------------------------------------------
+metadata_required <- c("SampleID", "Group")
+metadata_optional <- c("SubjectID", "Age", "Sex", "CollectionSite", "SequencingType", "Batch", "LibraryPrep", "dmft")
+
+coerce_metadata_types <- function(df) {
+  # Ensure presence of required columns
+  for (rc in metadata_required) if (!rc %in% colnames(df)) df[[rc]] <- NA
+  # Coerce basic types with safe defaults
+  if ("SampleID" %in% colnames(df)) df$SampleID <- as.character(df$SampleID)
+  if ("SubjectID" %in% colnames(df)) df$SubjectID <- as.character(df$SubjectID)
+  if ("Group" %in% colnames(df)) df$Group <- as.factor(df$Group)
+  if ("Age" %in% colnames(df)) df$Age <- suppressWarnings(as.numeric(df$Age))
+  if ("Sex" %in% colnames(df)) df$Sex <- factor(df$Sex, levels = c("Male","Female","Other","Unknown"))
+  if ("CollectionSite" %in% colnames(df)) df$CollectionSite <- as.factor(df$CollectionSite)
+  if ("SequencingType" %in% colnames(df)) df$SequencingType <- factor(df$SequencingType, levels = c("16S","shotgun"))
+  if ("Batch" %in% colnames(df)) df$Batch <- as.character(df$Batch)
+  if ("LibraryPrep" %in% colnames(df)) df$LibraryPrep <- as.character(df$LibraryPrep)
+  if ("dmft" %in% colnames(df)) df$dmft <- suppressWarnings(as.numeric(df$dmft))
+  df
+}
+
+validate_and_align_metadata <- function(meta_path, ps, analysis_dir, cfg) {
+  issues <- c()
+  meta <- tryCatch(read.csv(meta_path, check.names = FALSE, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(meta)) {
+    issues <- c(issues, sprintf("Could not read metadata: %s", meta_path))
+    return(list(meta = NULL, issues = issues))
+  }
+  
+  # Map config-defined id/group columns
+  id_col <- cfg$metadata$id_column %||% "SampleID"
+  group_col <- cfg$metadata$group_column %||% "Group"
+  
+  # If the configured id_column doesn't exist but "Sample" does, rename it
+  if (!id_col %in% colnames(meta) && "Sample" %in% colnames(meta)) {
+    colnames(meta)[colnames(meta) == "Sample"] <- id_col
+    issues <- c(issues, sprintf("Renamed 'Sample' column to '%s'", id_col))
+  }
+  
+  # Ensure SampleID column exists
+  if (!id_col %in% colnames(meta)) {
+    if (!is.null(rownames(meta)) && all(nzchar(rownames(meta)))) {
+      meta[[id_col]] <- rownames(meta)
+    } else {
+      issues <- c(issues, sprintf("Missing '%s' column; using row numbers", id_col))
+      meta[[id_col]] <- seq_len(nrow(meta))
+    }
+  }
+  rownames(meta) <- as.character(meta[[id_col]])
+  
+  # Type coercion
+  meta <- coerce_metadata_types(meta)
+  
+  # Ensure Group column exists
+  if (!group_col %in% colnames(meta)) {
+    meta[[group_col]] <- factor("Unknown")
+    issues <- c(issues, sprintf("Missing '%s' column; filled with 'Unknown'", group_col))
+  }
+
+  sn <- trimws(sample_names(ps))
+  rn <- trimws(rownames(meta))
+  common <- intersect(sn, rn)
+  if (length(common) == 0) {
+    issues <- c(issues, "No matching sample IDs between metadata and phyloseq object")
+    return(list(meta = NULL, issues = issues))
+  }
+  
+  # Align order to sample_names
+  meta_aligned <- meta[sn, , drop = FALSE]
+  
+  # Save validated metadata and any issues
+  utils::write.csv(meta_aligned, file.path(analysis_dir, "metadata_validated.csv"), row.names = TRUE)
+  if (length(issues)) writeLines(issues, file.path(analysis_dir, "metadata_issues.txt"))
+  list(meta = meta_aligned, issues = issues)
+}
+
+# --- phylogeny helper (optional, minimal) -------------------------------------
+maybe_build_tree <- function(ps, cfg) {
+  build <- isTRUE(cfg$amplicon$phylogeny$build_tree)
+  if (!build) return(ps)
+  if (!requireNamespace("phangorn", quietly = TRUE) || !requireNamespace("DECIPHER", quietly = TRUE)) return(ps)
+  max_tips <- cfg$amplicon$phylogeny$max_tips %||% 500
+  keep_taxa <- names(sort(taxa_sums(ps), decreasing = TRUE))[seq_len(min(max_tips, ntaxa(ps)))]
+  ps_sub <- prune_taxa(keep_taxa, ps)
+  taxa_ids <- taxa_names(ps_sub)
+  seqs <- taxa_ids
+  # Try to locate ASV sequences
+  # Locate ASV fasta in cohort-scoped analysis folder (where run_analysis_16s writes it)
+  base_out <- cfg$project$output_dir %||% "output"
+  cohort <- cfg$io$cohort
+  if (is.null(cohort) || is.na(cohort) || cohort == "") cohort <- basename(cfg$io$input_dir)
+  fasta_file <- file.path(base_out, cohort, "analysis", "asv_sequences.fasta")
+  if (!all(grepl("^[ACGTNacgtn]+$", seqs)) && file.exists(fasta_file)) {
+    fas <- Biostrings::readDNAStringSet(fasta_file)
+    names(fas) <- gsub("\t.*$", "", names(fas))
+    have <- intersect(names(fas), taxa_ids)
+    if (length(have) > 0) {
+      fas <- fas[have]; seqs <- as.character(fas); names(seqs) <- names(fas)
+    }
+  }
+  names(seqs) <- taxa_ids
+  alignment <- DECIPHER::AlignSeqs(Biostrings::DNAStringSet(seqs), processors = cfg$project$threads %||% 2)
+  aln_mat <- as.matrix(alignment)
+  phang_align <- phangorn::phyDat(aln_mat, type = "DNA")
+  dm <- phangorn::dist.ml(phang_align)
+  treeNJ <- phangorn::NJ(dm)
+  fit <- phangorn::pml(treeNJ, data = phang_align)
+  fitGTR <- phangorn::optim.pml(fit, model = "GTR", optInv = TRUE, optGamma = TRUE, k = 4)
+  phyloseq::phy_tree(ps_sub) <- fitGTR$tree
+  ps_sub
+}
+
 run_analysis_16s <- function(cfg, pre = NULL) {
   set.seed(cfg$project$random_seed %||% 1234)
   base_out <- cfg$project$output_dir %||% "output"
@@ -83,20 +195,11 @@ run_analysis_16s <- function(cfg, pre = NULL) {
     tax_table(taxa)
   )
 
-  # Optional metadata
+  # Optional metadata with validation
   if (!is.null(cfg$io$metadata_csv) && file.exists(cfg$io$metadata_csv)) {
-    meta <- tryCatch(read.csv(cfg$io$metadata_csv, row.names = 1, check.names = FALSE, stringsAsFactors = FALSE), error = function(e) NULL)
-    if (!is.null(meta)) {
-      rn <- trimws(rownames(meta)); rownames(meta) <- rn
-      sn <- sample_names(ps); sn <- trimws(sn)
-      common <- intersect(sn, rownames(meta))
-      if (length(common) > 0) {
-        meta_sub <- meta[sn, , drop = FALSE]
-        sample_data(ps) <- sample_data(meta_sub)
-      } else {
-        message("[analysis-16S] metadata.csv found but sample IDs do not match; proceeding without metadata.")
-      }
-    }
+    va <- validate_and_align_metadata(cfg$io$metadata_csv, ps, analysis_dir, cfg)
+    if (!is.null(va$meta)) sample_data(ps) <- sample_data(va$meta)
+    if (length(va$issues)) message("[analysis-16S] Metadata notes: ", paste(va$issues, collapse = "; "))
   }
 
   # Phylogeny (optional) will be handled in visualization if enabled; we keep ps as-is here
@@ -119,6 +222,29 @@ run_analysis_16s <- function(cfg, pre = NULL) {
   }
   ps_rarefied <- suppressWarnings(rarefy_even_depth(ps_filtered, sample.size = depth, rngseed = cfg$project$random_seed %||% 1234))
   saveRDS(ps_rarefied, file.path(analysis_dir, "phyloseq_rarefied.rds"))
+
+  # Beta distances as configured (save to analysis_dir)
+  metrics <- cfg$analysis$beta_metrics %||% c("bray")
+  for (m in metrics) {
+    mm <- tolower(m)
+    if (mm == "bray") {
+      d <- phyloseq::distance(ps_rarefied, method = "bray")
+      saveRDS(d, file.path(analysis_dir, "beta_bray.rds"))
+    } else if (grepl("unifrac", mm)) {
+      ps_for_uni <- ps_rarefied
+      if (is.null(phy_tree(ps_for_uni, errorIfNULL = FALSE))) {
+        ps_for_uni <- try(maybe_build_tree(ps_for_uni, cfg), silent = TRUE)
+      }
+      if (!is.null(phy_tree(ps_for_uni, errorIfNULL = FALSE))) {
+        d <- phyloseq::distance(ps_for_uni, method = "unifrac")
+        saveRDS(d, file.path(analysis_dir, "beta_unifrac.rds"))
+      } else {
+        message("[analysis-16S] UniFrac requested but no tree available and build not possible; skipping.")
+      }
+    } else {
+      message("[analysis-16S] Beta metric not implemented: ", m)
+    }
+  }
 
   # Alpha diversity table (saved for analysis outputs)
   alpha_df <- estimate_richness(ps_rarefied, measures = c("Observed", "Shannon", "InvSimpson"))

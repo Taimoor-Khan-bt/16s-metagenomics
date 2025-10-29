@@ -24,7 +24,7 @@ setup:
     silva_species: null      # optional URL; if provided and file missing, will download
 
 metadata:
-  id_column: "Sample"       # column with unique sample IDs matching FASTQ basenames
+  id_column: "SampleID"     # column with unique sample IDs matching FASTQ basenames
   group_column: "Group"     # primary comparison (e.g., case/control)
   covariates: ["Age", "Sex", "Batch"]
   block_column: null         # e.g., SubjectID for matched/paired designs
@@ -35,14 +35,16 @@ filters:
   min_feature_abundance: 1e-5    # relative abundance threshold for pruning
 
 plots:
-  dpi: 300
+  dpi: 600                  # Increased for publication quality
   width: 8
   height: 6
+  base_size: 14             # Larger font for readability
   theme: "classic"          # classic | minimal | bw
-  color_palette: "viridis"  # set to okabe-ito | viridis | tableau10
+  color_palette: "viridis"  # okabe-ito | viridis | tableau10 | plasma
   # ranks used for composition barplots and top-N taxa
   ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
-  top_taxa: 15
+  top_taxa: 10              # Reduced for cleaner plots
+  heatmap_top: 25           # Top taxa for heatmap
   enable:
     alpha: true
     composition: true
@@ -54,7 +56,7 @@ plots:
 
 analysis:
   alpha_metrics: ["Shannon", "Observed", "Faith"]
-  beta_metrics: ["bray", "unifrac", "aitchison"]
+  beta_metrics: ["bray", "unifrac"]  # Removed aitchison (not yet implemented)
   ordination: "PCoA"        # PCoA | NMDS
   rarefaction_depth: 0       # 0 to skip rarefaction, else integer
   da_methods: ["ancombc2", "aldex2", "deseq2"]
@@ -76,7 +78,7 @@ amplicon:
     silva_species: "silva_species_assignment_v138.1.fa"
   phylogeny:
     build_tree: true            # requires phangorn
-    max_tips: 500
+    max_tips: 100               # Reduced for readable trees
   functional_inference:
     method: "none"             # picrust2 | tax4fun2 | none
 
