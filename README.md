@@ -1,366 +1,268 @@
-# 16S rRNA Metagenomics Analysis Pipeline
+# 16S rRNA Metagenomics Pipeline
 
-A production-ready pipeline for 16S rRNA amplicon sequencing analysis. Implements DADA2 workflow with comprehensive quality control, taxonomic classification, diversity analysis, and publication-ready visualizations.
+An automated pipeline for analyzing 16S amplicon sequencing data. Processes raw FASTQ files through quality control, ASV inference, taxonomic classification, diversity analysis, and generates publication-ready figures.
 
 **Author**: Taimoor Khan  
 **Contact**: taimoorkhan007.tk@gmail.com  
-**Version**: 2.1.0
+**Version**: 2.2.0
 
 ---
 
-## Purpose
+## What This Pipeline Does
 
-This pipeline processes Illumina-sequenced 16S rRNA amplicons from raw FASTQ files through quality filtering, ASV inference, taxonomic assignment, diversity metrics, and statistical visualization. Outputs include phyloseq objects, diversity tables, and high-resolution publication-ready figures (600 DPI).
-
-**Key Features**:
-- DADA2-based ASV inference with quality filtering
-- SILVA database taxonomic classification (genus and species level)
-- Alpha diversity metrics with automated statistical testing
-- Beta diversity analysis with PERMANOVA
-- Phylogenetic tree construction for UniFrac distances
-- Modular configuration via YAML
-- Automated metadata validation
+- Quality filtering and ASV inference using DADA2
+- Taxonomic classification with SILVA database
+- Alpha and beta diversity analysis with statistical testing
+- Differential abundance testing (DESeq2)
+- Phylogenetic tree construction
+- Group comparisons across metadata variables
+- Correlation analysis with continuous variables
+- Publication-ready figures (600 DPI TIFF/PDF)
 
 ---
 
 ## Installation
 
-### System Requirements
+### 1. Install R and Required Packages
 
-- **Operating System**: Linux or macOS
-- **R**: Version 4.1 or higher
-- **Memory**: Minimum 8 GB RAM (16 GB recommended for large datasets)
-- **Disk Space**: 10 GB for reference databases plus dataset storage
+Ensure R ≥4.3.0 is installed. The pipeline will check and install required packages automatically on first run.
 
-### Step 1: Install R Dependencies
+**Required R packages**: dada2, phyloseq, DESeq2, ggplot2, ggtree, vegan, ape, DECIPHER, phangorn
 
-```r
-# Install BiocManager if not already installed
-if (!requireNamespace("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
+### 2. Download SILVA Reference Files
 
-# Install Bioconductor packages
-BiocManager::install(c(
-    "dada2",
-    "phyloseq",
-    "Biostrings",
-    "DECIPHER",
-    "ggtree"
-))
-
-# Install CRAN packages
-install.packages(c(
-    "phangorn",
-    "vegan",
-    "ggplot2",
-    "dplyr",
-    "tidyr",
-    "cowplot",
-    "viridisLite",
-    "scales",
-    "ape",
-    "yaml",
-    "ggpubr"  # Optional: for statistical annotations
-))
-```
-
-### Step 2: Download SILVA Reference Databases
-
-Download SILVA v138.1 training sets:
+Download SILVA v138.1 taxonomic databases:
 
 ```bash
-# Create reference directory
-mkdir -p references
-
-# Download taxonomy training set
-wget -P references/ https://zenodo.org/record/4587955/files/silva_nr99_v138.1_train_set.fa.gz
-gunzip references/silva_nr99_v138.1_train_set.fa.gz
+# Download training set
+wget https://zenodo.org/record/4587955/files/silva_nr99_v138.1_train_set.fa.gz
+gunzip silva_nr99_v138.1_train_set.fa.gz
 
 # Download species assignment database
-wget -P references/ https://zenodo.org/record/4587955/files/silva_species_assignment_v138.1.fa.gz
-gunzip references/silva_species_assignment_v138.1.fa.gz
-```
-
-### Step 3: Clone Repository
-
-```bash
-git clone https://github.com/Taimoor-Khan-bt/16s-metagenomics.git
-cd 16s-metagenomics
-```
-
-### Step 4: Verify Installation
-
-```bash
-Rscript -e "library(dada2); library(phyloseq); cat('Installation successful\n')"
+wget https://zenodo.org/record/4587955/files/silva_species_assignment_v138.1.fa.gz
+gunzip silva_species_assignment_v138.1.fa.gz
 ```
 
 ---
 
-## Setup and Configuration
+## Setup
 
-### Input Data Structure
+### Input Data
 
-Place FASTQ files in a dedicated directory:
+Place paired-end FASTQ files in a directory:
 
 ```
-project_dir/
-├── HF/                          # Input directory
+your_project/
+├── raw_reads/
 │   ├── Sample1_R1.fastq.gz
 │   ├── Sample1_R2.fastq.gz
 │   ├── Sample2_R1.fastq.gz
 │   └── Sample2_R2.fastq.gz
-├── metadata.csv                 # Sample metadata
-└── config/
-    └── config.yaml              # Pipeline configuration
+└── metadata.csv
 ```
 
 ### Metadata File
 
-Create `metadata.csv` with required columns:
+Create `metadata.csv` with sample information:
 
-| SampleID | Group     | Age | Sex |
-|----------|-----------|-----|-----|
-| Sample1  | Control   | 25  | M   |
-| Sample2  | Treatment | 30  | F   |
+```csv
+SampleID,Group,Age,Sex
+Sample1,Control,25,M
+Sample2,Treatment,30,F
+```
 
-**Required columns**:
-- `SampleID`: Must match FASTQ filename prefixes
-- `Group`: Experimental groups for comparison
-
-**Optional columns**: SubjectID, Age, Sex, CollectionSite, SequencingType, Batch, LibraryPrep, dmft
-
-See `docs/metadata_schema.csv` for complete specifications.
+**Required**: `SampleID` column matching FASTQ filenames  
+**Required**: `Group` column for primary comparisons  
+**Optional**: Additional columns for secondary analyses
 
 ### Configuration File
 
-Edit `config/config.yaml` to specify paths and parameters:
+Copy and edit a template from `config/`:
+
+```bash
+cp config/kmu_config.yaml config/my_project.yaml
+```
+
+Edit key parameters:
 
 ```yaml
 project:
   name: "MyProject"
-  cohort_name: "HF"
-  sequencing_type: "16S"
+  cohort_name: "MyAnalysis"
 
 io:
-  input_dir: "HF"                    # Path to FASTQ directory
+  input_dir: "raw_reads"           # FASTQ directory
   output_dir: "output"
-  metadata_csv: "metadata.csv"       # Optional
+  metadata_csv: "metadata.csv"
 
+```yaml
 amplicon:
   taxonomy:
-    train_set: "references/silva_nr99_v138.1_train_set.fa"
-    species_db: "references/silva_species_assignment_v138.1.fa"
-  
-  phylogeny:
-    build_tree: true                 # Set false to skip tree construction
-    max_tips: 100                    # Maximum tips for tree visualization
+    train_set: "silva_nr99_v138.1_train_set.fa"
+    species_db: "silva_species_assignment_v138.1.fa"
+```
 
-plots:
-  enable:
-    alpha_diversity: true
-    composition: true
-    heatmap: true
-    ordination: true
-    phylo: true
-  dpi: 600                           # Publication quality
-  base_size: 14
+metadata:
+  primary_comparison:
+    group_column: "Group"
+  secondary_comparisons:           # Optional
+    - "Sex"
+    - "AgeCategory"
+
+analysis:
+  mode: "comprehensive"            # simple | standard | comprehensive
 ```
 
 ---
 
-## Usage
+## Running the Pipeline
 
-### Basic Execution
-
-Run the complete pipeline:
+Execute the pipeline:
 
 ```bash
-Rscript scripts/runner.R --config config/config.yaml
+./run_pipeline.sh config/my_project.yaml
 ```
 
-### Pipeline Steps
+The pipeline runs these steps automatically:
+1. Initial quality control (FastQC on raw reads)
+2. Adapter/primer trimming (Cutadapt)
+3. Post-trim quality control (FastQC)
+4. Quality filtering and ASV inference (DADA2)
+5. Taxonomic classification (SILVA)
+6. Phylogenetic tree construction
+7. Diversity calculations
+8. Statistical testing
+9. Visualization generation
+10. Aggregated QC report (MultiQC)
 
-The pipeline executes the following stages automatically:
-
-1. **Quality Control**: Filter and trim reads based on quality scores
-2. **Denoising**: DADA2 error learning and ASV inference
-3. **Merging**: Pair-end read merging
-4. **Chimera Removal**: Identify and remove chimeric sequences
-5. **Taxonomic Assignment**: SILVA-based classification
-6. **Phylogenetic Analysis**: Multiple sequence alignment and tree construction
-7. **Diversity Metrics**: Calculate alpha and beta diversity
-8. **Statistical Testing**: Automated group comparisons
-9. **Visualization**: Generate publication-ready figures
-
-### Execution Time
-
-Expected runtime (varies with dataset size):
-- Small dataset (10 samples, 50K reads each): ~15 minutes
-- Medium dataset (50 samples, 100K reads each): ~1 hour
-- Large dataset (100+ samples, 200K reads each): ~3-4 hours
+**Runtime**: 15 minutes (10 samples) to 3 hours (100+ samples)
 
 ---
 
-## Expected Outputs
+## Analysis Modes
 
-### Directory Structure
+### Simple Mode
+Basic two-group comparison. Outputs alpha/beta diversity and composition plots.
+
+```yaml
+analysis:
+  mode: "simple"
+```
+
+### Standard Mode
+Multiple categorical variables. Generates separate analyses for each grouping variable.
+
+```yaml
+analysis:
+  mode: "standard"
+metadata:
+  secondary_comparisons:
+    - "Sex"
+    - "AgeCategory"
+```
+
+### Comprehensive Mode
+Full analysis including differential abundance, correlations with continuous variables, group comparisons at multiple taxonomic ranks, and phylogenetic trees.
+
+```yaml
+analysis:
+  mode: "comprehensive"
+metadata:
+  secondary_comparisons:
+    - "Sex"
+    - "AgeCategory"
+  continuous_variables:
+    - "Age"
+    - "BMI"
+analysis:
+  differential_abundance:
+    enabled: true
+  group_comparisons:
+    enabled: true
+```
+
+---
+
+## Outputs
 
 ```
 output/
-└── HF/                              # Cohort-specific output
-    ├── trimmed/                     # Quality-trimmed FASTQ
-    ├── filtered/                    # DADA2 filtered FASTQ
-    ├── analysis/                    # Core results
-    │   ├── phyloseq_object_raw.rds
-    │   ├── phyloseq_rarefied.rds
-    │   ├── alpha_diversity.csv
-    │   ├── read_tracking.csv
-    │   ├── filtering_summary.csv
-    │   ├── beta_bray.rds
-    │   ├── beta_unifrac.rds
-    │   ├── beta_wunifrac.rds
-    │   ├── metadata_validated.csv
-    │   └── sessionInfo.txt
-    └── visualizations/              # Publication figures
-        ├── alpha_shannon_boxplot.tiff
-        ├── alpha_observed_boxplot.tiff
-        ├── alpha_simpson_boxplot.tiff
-        ├── composition_phylum.tiff
-        ├── composition_class.tiff
-        ├── composition_order.tiff
-        ├── composition_family.tiff
-        ├── composition_genus.tiff
-        ├── heatmap_top_genus.tiff
-        ├── beta_pcoa_bray.tiff
-        ├── beta_pcoa_unifrac.tiff
-        ├── phylo_tree_rectangular.tiff
-        ├── phylo_tree_rectangular.pdf
-        ├── phylo_tree_circular.tiff
-        └── phylo_tree_circular.pdf
+├── fastqc_raw/                  # FastQC reports for raw reads
+├── trimmed/                     # Adapter-trimmed FASTQ files
+├── fastqc_trimmed/              # FastQC reports for trimmed reads
+├── multiqc/                     # Aggregated QC report (HTML)
+└── MyAnalysis/                  # Cohort-specific results
+    ├── analysis/                # Data files
+    │   ├── phyloseq_rarefied.rds    # Main phyloseq object
+    │   ├── alpha_diversity.csv      # Diversity metrics
+    │   ├── deseq2_*.csv             # Differential abundance results
+    │   ├── correlation_*.csv        # Correlation results
+    │   └── read_tracking.csv        # QC tracking
+    └── visualizations/              # Figures (TIFF + PDF)
+        ├── alpha_*.tiff             # Alpha diversity boxplots
+        ├── beta_*.tiff              # PCoA ordinations
+        ├── composition_*.tiff       # Taxonomic barplots
+        ├── heatmap_*.tiff           # Clustered heatmaps
+        ├── phylo_tree_*.tiff        # Phylogenetic trees
+        ├── volcano_*.tiff           # Differential abundance
+        └── correlation_*.tiff       # Taxa-variable correlations
 ```
 
-### Key Output Files
-
-#### Analysis Files
-
-| File | Description |
-|------|-------------|
-| `phyloseq_object_raw.rds` | Complete phyloseq object with ASV table, taxonomy, and metadata |
-| `phyloseq_rarefied.rds` | Rarefied phyloseq object for diversity analyses |
-| `alpha_diversity.csv` | Alpha diversity metrics (Observed, Shannon, Simpson, Chao1) |
-| `read_tracking.csv` | Read counts through each processing step |
-| `filtering_summary.csv` | Quality filtering statistics per sample |
-| `beta_*.rds` | Distance matrices for ordination analyses |
-
-#### Visualization Files
-
-All figures generated at 600 DPI in TIFF format (some also in PDF):
-
-- **Alpha Diversity**: Boxplots with statistical annotations (Wilcoxon/Kruskal-Wallis tests)
-- **Composition**: Stacked barplots at taxonomic ranks (Phylum through Genus)
-- **Heatmap**: Top 25 genera by abundance across samples
-- **Beta Diversity**: PCoA ordination plots with group ellipses
-- **Phylogenetic Trees**: Rectangular and circular layouts with abundance-scaled tips
+**Key files**:
+- `multiqc/multiqc_report.html`: Start here - comprehensive QC summary
+- `phyloseq_rarefied.rds`: Load into R for custom analyses
+- `alpha_diversity.csv`: Diversity metrics with statistics
+- `deseq2_*.csv`: Differentially abundant taxa
+- `correlation_*.csv`: Taxa-variable correlations
 
 ---
 
-## Statistical Analyses
+## Statistical Methods
 
-### Alpha Diversity
+**Alpha diversity**: Wilcoxon (2 groups) or Kruskal-Wallis (3+ groups)  
+**Beta diversity**: PERMANOVA with 999 permutations  
+**Differential abundance**: DESeq2 with FDR correction  
+**Correlations**: Spearman correlation with FDR correction  
+**Group comparisons**: Non-parametric tests with p-value annotations
 
-Within-sample diversity metrics:
-- **Observed ASVs**: Species richness
-- **Shannon Index**: Richness and evenness combined
-- **Simpson Index**: Dominance measure
-
-Statistical comparisons:
-- 2 groups: Wilcoxon rank-sum test
-- 3+ groups: Kruskal-Wallis test
-- P-values displayed on plots with significance symbols
-
-### Beta Diversity
-
-Between-sample dissimilarity:
-- **Bray-Curtis**: Abundance-based dissimilarity
-- **Jaccard**: Presence/absence-based dissimilarity
-- **UniFrac**: Phylogenetic distance (requires tree)
-- **Weighted UniFrac**: Abundance-weighted phylogenetic distance
-
-Group separation assessed with PERMANOVA (999 permutations).
-
-### Taxonomic Composition
-
-Relative abundance analysis:
-- Aggregated at multiple taxonomic ranks
-- Top 10 most abundant taxa displayed
-- Low-abundance taxa grouped as "Other"
+All p-values are FDR-corrected for multiple testing.
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+**Error: "Cannot find metadata column 'SampleID'"**  
+→ Ensure metadata has `SampleID` column matching FASTQ filenames
 
-**Error: "Cannot find metadata column 'Sample'"**
-- Solution: Ensure metadata has `SampleID` column or set `metadata.id_column: "Sample"` in config
+**Error: "Reference database not found"**  
+→ Check SILVA file paths in config are correct
 
-**Error: "Reference database not found"**
-- Solution: Verify SILVA file paths in `config.yaml` and ensure files are decompressed
+**Warning: "Low read counts after filtering"**  
+→ Review `read_tracking.csv` and adjust filtering parameters in config
 
-**Warning: "Low read counts after filtering"**
-- Solution: Review quality profiles and adjust filtering parameters in config
+**Memory error during tree construction**  
+→ Set `build_tree: false` in config or reduce `max_tips`
 
-**Memory error during tree construction**
-- Solution: Reduce `max_tips` in config or set `build_tree: false`
-
-### Getting Help
-
-- Check `output/*/analysis/sessionInfo.txt` for R package versions
-- Review `output/*/analysis/read_tracking.csv` for read loss at each step
-- Open an issue: https://github.com/Taimoor-Khan-bt/16s-metagenomics/issues
+**No differential abundance results**  
+→ Check you have at least 3 samples per group and enabled `differential_abundance` in config
 
 ---
 
 ## Citation
 
-If you use this pipeline, please cite:
-
 ```
-Khan T. (2025). 16S rRNA Metagenomics Analysis Pipeline (v2.1.0). 
-GitHub repository: https://github.com/Taimoor-Khan-bt/16s-metagenomics
+Khan T. (2025). 16S rRNA Metagenomics Pipeline (v2.2.0). 
+GitHub: https://github.com/Taimoor-Khan-bt/16s-metagenomics
 ```
 
-Please also cite the core tools:
-
-- **DADA2**: Callahan et al. (2016) Nature Methods 13:581-583
-- **phyloseq**: McMurdie & Holmes (2013) PLoS ONE 8(4):e61217
-- **SILVA**: Quast et al. (2013) Nucleic Acids Research 41:D590-D596
+**Core tools**:
+- DADA2: Callahan et al. (2016) Nat Methods 13:581-583
+- phyloseq: McMurdie & Holmes (2013) PLoS ONE 8(4):e61217
+- DESeq2: Love et al. (2014) Genome Biol 15:550
+- SILVA: Quast et al. (2013) Nucleic Acids Res 41:D590-D596
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE` file for details.
-
----
-
-## Project Structure
-
-```
-16s-metagenomics/
-├── config/
-│   └── config.yaml              # Pipeline configuration
-├── docs/
-│   └── metadata_schema.csv      # Metadata specification
-├── scripts/
-│   ├── runner.R                 # Main execution script
-│   ├── setup.R                  # Environment setup
-│   ├── preprocess_16s.R         # Quality filtering
-│   ├── analysis_16s.R           # DADA2 workflow and analysis
-│   └── visualization.R          # Figure generation
-├── references/                  # SILVA databases (user-added)
-├── output/                      # Analysis results (generated)
-├── README.md
-├── LICENSE
-└── RELEASE_v2.1.0.md           # Release notes
-```
+MIT License - see `LICENSE` file

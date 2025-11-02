@@ -1,0 +1,168 @@
+# Configuration for KMU Shahzad 2024 Dataset
+
+project:
+  name: "KMU-Shahzad-2024-Analysis"
+  sequencing_type: "16s"
+  output_dir: "output"
+  first_run: false
+  random_seed: 1234
+  threads: 4
+
+io:
+  input_dir: "KMU_Shahzad_2024"
+  cohort: "KMU_2024"
+  metadata_csv: "metadata.csv"
+
+metadata:
+  id_column: "SampleID"
+  primary_comparison:
+    group_column: "Group"
+    levels: ["Caries free", "Non-severe", "Severe"]
+    reference: "Caries free"
+  secondary_comparisons:
+    - variable: "Sex"
+      enabled: true
+    - variable: "AgeCategory"
+      enabled: true
+    - variable: "Anemia"
+      enabled: true
+    - variable: "Stunting"
+      enabled: true
+    - variable: "Underweight"
+      enabled: true
+    - variable: "Wasting"
+      enabled: true
+    - variable: "Overweight"
+      enabled: true
+    - variable: "CariesPresence"
+      enabled: true
+  continuous_variables:
+    - name: "AgeMonths"
+      enabled: true
+    - name: "Hemoglobin"
+      enabled: true
+    - name: "dmft"
+      enabled: true
+
+amplicon:
+  region: "V3-V4"
+  fwd_primer: "CCTACGGGNGGCWGCAG"
+  rev_primer: "GACTACHVGGGTATCTAATCC"
+  expected_length:
+    min: 400
+    max: 470
+  phylogeny:
+    build_tree: true  # Build phylogenetic tree for UniFrac and tree plots
+
+quality:
+  truncLen_fwd: 240
+  truncLen_rev: 200
+  maxN: 0
+  maxEE_fwd: 2
+  maxEE_rev: 2
+  truncQ: 2
+  rm.phix: true
+  compress: true
+  multithread: true
+
+taxonomy:
+  train_set: "silva_nr99_v138.1_train_set.fa"
+  species_assignment: "silva_species_assignment_v138.1.fa"
+  minBoot: 50
+
+diversity:
+  rarefaction:
+    enabled: true
+    depth: "auto"
+  alpha:
+    metrics:
+      - "Observed"
+      - "Shannon"
+      - "Simpson"
+  beta:
+    methods:
+      - "bray"
+      - "jaccard"
+    permutations: 999
+
+analysis:
+  mode: "comprehensive"  # Full analysis with stratification and correlations
+  compare_by: "Group"  # Primary grouping variable
+  alpha:
+    stratify_by_secondary: true  # Run primary comparison within each secondary level
+    correlate_continuous: true    # Correlate metrics with continuous variables
+  beta:
+    test_multifactor: true        # PERMANOVA with interactions
+    plot_secondary: true          # Ordinations colored by secondary variables
+  pairwise_comparisons:
+    enabled: true
+    contrasts:
+      - group1: "Severe"
+        group2: "Caries free"
+      - group1: "Non-severe"
+        group2: "Caries free"
+  differential_abundance:
+    enabled: true
+    methods: ["deseq2"]  # DESeq2 for differential abundance testing
+    taxonomic_rank: "Genus"  # Which rank to test
+    min_prevalence: 0.1  # Must be present in 10% of samples
+    min_abundance: 0.0001  # Minimum relative abundance
+    p_adjust_method: "fdr"  # FDR correction for multiple testing
+    log2fc_threshold: 1.0  # Effect size threshold for significance
+    alpha_threshold: 0.1  # Exploratory threshold (highlight p<0.05)
+  group_comparisons:
+    enabled: true  # Compare taxonomic profiles across all metadata groups
+    variables: ["Group", "AgeCategory", "Sex", "Anemia", "Stunting", "Underweight", "Wasting", "Overweight", "CariesPresence"]  # All categorical variables
+    taxonomic_ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
+    top_n: 15  # Show top 15 taxa per comparison
+    include_stats: true  # Add statistical annotations to plots
+    alpha_threshold: 0.1  # Exploratory threshold
+    highlight_threshold: 0.05  # Highlight statistically significant results
+
+statistical:
+  alpha_diversity:
+    test: "kruskal"  # Kruskal-Wallis for 3+ groups
+    p_adjust: "fdr"
+  beta_diversity:
+    test: "adonis"
+    p_adjust: "fdr"
+
+visualization:
+  theme: "classic"  # Publication-ready theme
+  color_palette: "okabe-ito"  # Colorblind-friendly palette
+  base_size: 14  # Base font size for plots
+  font_family: "sans"
+  
+plots:
+  enable:
+    alpha: true
+    beta: true
+    composition: true
+    heatmap: true  # Taxonomic heatmaps
+    tree_rectangular: true  # Phylogenetic tree
+    tree_circular: true  # Circular phylogenetic tree
+    group_comparisons: true  # Compare taxa across metadata groups
+    differential_abundance: true  # DA results visualization
+  composition:
+    taxonomic_ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
+    top_n: 10
+  heatmap:
+    taxonomic_ranks: ["Class", "Order", "Family", "Genus"]
+    top_n: 15
+    cluster_samples: true
+    cluster_taxa: true
+  group_comparison:
+    taxonomic_ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
+    top_n: 15
+    show_stats: true
+    plot_type: "boxplot"  # boxplot, violin, or barplot
+  output:
+    formats: ["tiff", "pdf"]  # Save in multiple formats
+    dpi: 600  # High resolution for publication
+    width: 12
+    height: 8
+
+filtering:
+  min_reads_per_sample: 1000
+  min_prevalence: 0.1
+  min_abundance: 0.0001

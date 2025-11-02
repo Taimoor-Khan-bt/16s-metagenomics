@@ -5,12 +5,42 @@ suppressPackageStartupMessages({
   library(yaml)
 })
 
+# Global error handler
+options(error = function() {
+  cat("\n")
+  cat("==========================================\n")
+  cat("ERROR: Pipeline failed during R execution\n")
+  cat("==========================================\n")
+  cat("\nError traceback:\n")
+  traceback(2)
+  cat("\nCommon issues:\n")
+  cat("  - Missing or invalid input files\n")
+  cat("  - Insufficient samples after filtering\n")
+  cat("  - Missing metadata columns\n")
+  cat("  - Invalid configuration parameters\n")
+  cat("\n")
+  q(status = 1)
+})
+
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2 || args[1] != "--config") {
   stop("Usage: Rscript scripts/runner.R --config <config.yaml>")
 }
 cfg_path <- normalizePath(args[2])
-cfg <- yaml::read_yaml(cfg_path)
+
+# Validate configuration before proceeding
+message("[runner] Validating configuration...")
+tryCatch({
+  source(file.path("scripts", "validate_config.R"))
+  cfg <- validate_config(cfg_path)
+}, error = function(e) {
+  cat("\n")
+  cat("==========================================\n")
+  cat("ERROR: Configuration validation failed\n")
+  cat("==========================================\n")
+  cat("Details:", conditionMessage(e), "\n\n")
+  q(status = 1)
+})
 
 message("[runner] Project: ", cfg$project$name)
 message("[runner] Mode: ", cfg$project$sequencing_type)
@@ -39,11 +69,33 @@ if (tolower(cfg$project$sequencing_type) == "16s") {
   # Pipeline stages
   source(file.path("scripts", "preprocess_16s.R"))
   source(file.path("scripts", "analysis_16s.R"))
-  source(file.path("scripts", "visualization.R"))
+  
+  # Use modular visualization if USE_MODULAR_VIZ is set, otherwise legacy
+  use_modular <- Sys.getenv("USE_MODULAR_VIZ", "true") == "true"
+  if (use_modular && file.exists(file.path("scripts", "visualization_v2.R"))) {
+    message("[runner] Using modular visualization system")
+    source(file.path("scripts", "visualization_v2.R"))
+  } else {
+    message("[runner] Using legacy visualization system")
+    source(file.path("scripts", "visualization.R"))
+  }
 
+  # Run preprocessing and DADA2 analysis
   pre <- run_preprocess_16s(cfg)
-  run_analysis_16s(cfg, pre)
+  analysis_results <- run_analysis_16s(cfg, pre)
+  
+  # Check if modular analysis is enabled (analysis.mode is defined)
+  analysis_mode <- cfg$analysis$mode
+  if (!is.null(analysis_mode) && analysis_mode %in% c("simple", "standard", "comprehensive")) {
+    message(sprintf("[runner] Running %s mode analysis", toupper(analysis_mode)))
+    run_analysis_by_plan(analysis_results$ps_rarefied, cfg)
+  } else {
+    message("[runner] Using legacy single-group analysis (set analysis.mode to enable multi-variable)")
+  }
+  
+  # Generate visualizations
   run_plots(cfg)
+
 
 } else if (tolower(cfg$project$sequencing_type) == "shotgun") {
   # Execute shotgun module (bash) then visualize in R

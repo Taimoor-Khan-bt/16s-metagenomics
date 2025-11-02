@@ -7,15 +7,36 @@
 *.Rcheck/
 .Rproj.user
 
-# Large data files
+# Large data files and reference databases
 *.fastq.gz
+*.fastq
 *.fasta
 *.fna
 *.fa
+SILVA_*.fasta
+silva_*.fa
+
+# Input data directories
+HF/
+KMU_Shahzad_2024/
+test_data/
 
 # Output files
-output/*
+output/
 !output/.gitkeep
+
+# Log files
+*.log
+
+# Temporary metadata files
+*_clean.csv
+*_filtered.csv
+*_intermediate.csv
+
+# Excel/Office files
+*.xlsx
+*.xlsm
+*.xls
 
 # System files
 .DS_Store
@@ -25,9 +46,31 @@ Thumbs.db
 .env
 .Renviron
 renv/
+environment.yaml
 
 # Temporary files
 *.swp
 *~
 *.bak
 *.tmp
+
+# Development artifacts
+.azure/
+tmp/
+
+# Old documentation and summaries
+COMPREHENSIVE_MODE_SUMMARY.md
+CONFIG_COMPARISON_AND_MISSING_FEATURES.md
+ENHANCED_PIPELINE_SUMMARY.md
+PIPELINE_FINAL_SUMMARY.md
+QUICK_START_MODES.md
+RELEASE_*.md
+*_VALIDATION_REPORT.md
+*_SUMMARY.md
+
+# Old scripts
+cutadapt-16s-trim.sh
+test_phase3.sh
+16s-metagenomics.R
+16s-metagenomics-vis.R
+16s_pipeline.yaml

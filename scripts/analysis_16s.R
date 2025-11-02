@@ -12,6 +12,17 @@ suppressPackageStartupMessages({
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# Source analysis modules
+modules_dir <- file.path(dirname(sys.frame(1)$ofile), "modules")
+if (dir.exists(modules_dir)) {
+  source(file.path(modules_dir, "analysis_plan.R"))
+  source(file.path(modules_dir, "composite_scores.R"))
+  source(file.path(modules_dir, "alpha_diversity.R"))
+  source(file.path(modules_dir, "beta_diversity.R"))
+  message("[analysis-16S] Loaded modular analysis components")
+}
+
+
 # --- metadata helpers ----------------------------------------------------------
 metadata_required <- c("SampleID", "Group")
 metadata_optional <- c("SubjectID", "Age", "Sex", "CollectionSite", "SequencingType", "Batch", "LibraryPrep", "dmft")
@@ -41,9 +52,15 @@ validate_and_align_metadata <- function(meta_path, ps, analysis_dir, cfg) {
     return(list(meta = NULL, issues = issues))
   }
   
-  # Map config-defined id/group columns
+  # Map config-defined id/group columns (support both old and new config structure)
   id_col <- cfg$metadata$id_column %||% "SampleID"
-  group_col <- cfg$metadata$group_column %||% "Group"
+  
+  # Support both old config (group_column) and new config (primary_comparison$group_column)
+  if (!is.null(cfg$metadata$primary_comparison)) {
+    group_col <- cfg$metadata$primary_comparison$group_column %||% "Group"
+  } else {
+    group_col <- cfg$metadata$group_column %||% "Group"
+  }
   
   # If the configured id_column doesn't exist but "Sample" does, rename it
   if (!id_col %in% colnames(meta) && "Sample" %in% colnames(meta)) {
@@ -139,8 +156,12 @@ run_analysis_16s <- function(cfg, pre = NULL) {
     filtFs <- sort(list.files(filtered_dir, pattern = "_F_filt\\.fastq\\.gz$", full.names = TRUE))
     filtRs <- sort(list.files(filtered_dir, pattern = "_R_filt\\.fastq\\.gz$", full.names = TRUE))
     sample.names <- gsub("_F_filt\\.fastq\\.gz$", "", basename(filtFs))
+    matched_ids <- NULL
   } else {
-    filtFs <- pre$filtered_F; filtRs <- pre$filtered_R; sample.names <- pre$samples
+    filtFs <- pre$filtered_F
+    filtRs <- pre$filtered_R
+    sample.names <- pre$samples
+    matched_ids <- pre$matched_ids  # Get the metadata-matched IDs
   }
 
   if (length(filtFs) == 0) stop("[analysis-16S] No filtered files found.")
@@ -155,10 +176,19 @@ run_analysis_16s <- function(cfg, pre = NULL) {
   mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose = TRUE)
 
   seqtab <- makeSequenceTable(mergers)
+  # Rename samples to match metadata
+  if (!is.null(matched_ids)) {
+    rownames(seqtab) <- matched_ids
+  }
   utils::write.csv(dim(seqtab), file.path(analysis_dir, "seqtab_dimensions.csv"), row.names = FALSE)
 
   seqtab.nochim <- removeBimeraDenovo(seqtab, method = "consensus", multithread = TRUE)
   utils::write.csv(dim(seqtab.nochim), file.path(analysis_dir, "seqtab_nochim_dimensions.csv"), row.names = FALSE)
+
+  # Update sample.names to matched IDs for consistency
+  if (!is.null(matched_ids)) {
+    sample.names <- matched_ids
+  }
 
   # Length summary
   asv_lengths <- nchar(colnames(seqtab.nochim))
@@ -266,3 +296,136 @@ run_analysis_16s <- function(cfg, pre = NULL) {
 
   invisible(list(ps_raw = file.path(analysis_dir, "phyloseq_object_raw.rds"), ps_rarefied = file.path(analysis_dir, "phyloseq_rarefied.rds")))
 }
+
+#' Run Analysis by Plan (NEW - for modular multi-variable analysis)
+#' 
+#' Executes analyses based on analysis plan from config
+#' This function orchestrates: composite scores, alpha diversity, beta diversity
+#' 
+#' @param ps_path Path to phyloseq object (rarefied)
+#' @param cfg Configuration list
+#' @return NULL (results saved to files)
+#' 
+#' @export
+run_analysis_by_plan <- function(ps_path, cfg) {
+  message("\n[analysis-plan] Starting plan-based analysis")
+  
+  # Load phyloseq
+  ps <- readRDS(ps_path)
+  
+  # Create analysis plan
+  plan <- get_analysis_plan(cfg)
+  plan <- validate_analysis_plan(plan, ps)
+  print_analysis_plan(plan)
+  
+  # Add output directory to cfg for module access
+  cohort <- cfg$io$cohort %||% basename(cfg$io$input_dir)
+  analysis_dir <- file.path(cfg$project$output_dir %||% "output", cohort, "analysis")
+  cfg$output <- list(directory = analysis_dir)
+  
+  # Create composite scores if defined
+  if (length(plan$composite_scores) > 0) {
+    message("\n[composite] Creating composite scores")
+    ps <- create_composite_scores(ps, cfg)
+    # Save updated phyloseq
+    saveRDS(ps, ps_path)
+  }
+  
+  # Get distance metrics
+  distance_metrics <- cfg$analysis$beta$metrics %||% c("bray")
+  alpha_metrics <- cfg$analysis$alpha$metrics %||% c("Shannon", "Observed", "Simpson")
+  
+  # === ALPHA DIVERSITY ===
+  message("\n=== ALPHA DIVERSITY ANALYSES ===")
+  
+  # Primary
+  if (plan$run_alpha_primary) {
+    run_primary_alpha_analysis(ps, cfg, plan, metrics = alpha_metrics)
+  }
+  
+  # Secondary
+  if (length(plan$secondary_vars) > 0) {
+    run_secondary_alpha_analysis(ps, cfg, plan, metrics = alpha_metrics)
+  }
+  
+  # Stratified
+  if (plan$run_alpha_stratified) {
+    run_stratified_alpha_analysis(ps, cfg, plan, metrics = alpha_metrics)
+  }
+  
+  # Continuous correlations
+  if (plan$run_alpha_continuous) {
+    run_alpha_continuous_correlations(ps, cfg, plan, metrics = alpha_metrics)
+  }
+  
+  # === BETA DIVERSITY ===
+  message("\n=== BETA DIVERSITY ANALYSES ===")
+  
+  for (dist_metric in distance_metrics) {
+    message(sprintf("\n[beta] Using distance: %s", dist_metric))
+    
+    # Primary
+    if (plan$run_beta_primary) {
+      run_primary_beta_analysis(ps, cfg, plan, distance = dist_metric)
+    }
+    
+    # Secondary
+    if (plan$run_beta_stratified) {
+      run_secondary_beta_analysis(ps, cfg, plan, distance = dist_metric)
+    }
+    
+    # Multifactor
+    if (plan$run_beta_multifactor) {
+      run_multifactor_beta_analysis(ps, cfg, plan, distance = dist_metric)
+    }
+    
+    # Pairwise
+    if (plan$run_pairwise_comparisons) {
+      run_pairwise_beta_comparisons(ps, cfg, plan, distance = dist_metric)
+    }
+    
+    # Dispersion test
+    if (isTRUE(cfg$analysis$beta$test_dispersion)) {
+      test_beta_dispersion(ps, plan$primary$group_column, distance = dist_metric)
+    }
+  }
+  
+  # === DIFFERENTIAL ABUNDANCE ===
+  message(sprintf("[DEBUG] plan$run_differential_abundance = %s", plan$run_differential_abundance %||% "NULL"))
+  
+  if (isTRUE(plan$run_differential_abundance)) {
+    message("\n=== DIFFERENTIAL ABUNDANCE ANALYSIS ===")
+    
+    # Source the DA module
+    if (!exists("run_deseq2_analysis")) {
+      message("[DA] Sourcing differential_abundance.R module...")
+      source(file.path("scripts", "modules", "differential_abundance.R"))
+    }
+    
+    # Run DESeq2
+    group_col <- plan$primary$group_column
+    rank <- cfg$analysis$differential_abundance$taxonomic_rank %||% "Genus"
+    
+    message(sprintf("[DA] Running DESeq2 analysis for rank: %s, grouping by: %s", rank, group_col))
+    
+    da_results <- run_deseq2_analysis(ps, cfg, analysis_dir, group_col, rank)
+    
+    if (!is.null(da_results)) {
+      message("[DA] Differential abundance analysis complete")
+    } else {
+      message("[DA] WARNING: DA analysis returned NULL")
+    }
+  }
+  
+  # === GROUP COMPARISONS ===
+  if (isTRUE(cfg$analysis$group_comparisons$enabled)) {
+    message("\n=== TAXONOMIC GROUP COMPARISONS ===")
+    message("[group-comp] Group comparison plots will be generated during visualization")
+  }
+  
+  message("\n[analysis-plan] Plan-based analysis complete!")
+  message(sprintf("[analysis-plan] Results saved to: %s", cfg$output$directory %||% "output"))
+  
+  invisible(NULL)
+}
+
