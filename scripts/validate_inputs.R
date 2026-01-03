@@ -231,8 +231,8 @@ if (is.null(fastq_dir)) {
     check_dir_exists(fastq_dir, "FASTQ file validation")
     
     # Get file patterns from config or use defaults
-    forward_pattern <- "_1\\.fastq\\.gz$"
-    reverse_pattern <- "_2\\.fastq\\.gz$"
+    forward_pattern <- "_1\\.(fastq|fq)\\.gz$"
+    reverse_pattern <- "_2\\.(fastq|fq)\\.gz$"
     
     # Validate file pairs
     fastq_validation <- validate_fastq_pairs(fastq_dir, forward_pattern, reverse_pattern)

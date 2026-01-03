@@ -12,6 +12,30 @@ suppressPackageStartupMessages({
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
+# Normalize metadata column names to handle common variations
+normalize_metadata_columns <- function(colnames) {
+  # Create mapping of common variations to standard names
+  mappings <- list(
+    SampleID = c("sampleid", "sample_id", "sample", "SAMPLEID", "Sample_ID", "SampleId"),
+    Group = c("group", "GROUP", "treatment", "Treatment", "TREATMENT"),
+    SubjectID = c("subjectid", "subject_id", "subject", "SUBJECTID", "Subject_ID"),
+    Age = c("age", "AGE"),
+    Sex = c("sex", "SEX", "gender", "Gender", "GENDER")
+  )
+  
+  normalized <- colnames
+  for (std_name in names(mappings)) {
+    for (variant in mappings[[std_name]]) {
+      idx <- which(tolower(colnames) == tolower(variant))
+      if (length(idx) > 0) {
+        normalized[idx] <- std_name
+        message(sprintf("[metadata] Normalized column '%s' -> '%s'", colnames[idx], std_name))
+      }
+    }
+  }
+  normalized
+}
+
 # Source analysis modules
 modules_dir <- file.path(dirname(sys.frame(1)$ofile), "modules")
 if (dir.exists(modules_dir)) {
@@ -51,6 +75,9 @@ validate_and_align_metadata <- function(meta_path, ps, analysis_dir, cfg) {
     issues <- c(issues, sprintf("Could not read metadata: %s", meta_path))
     return(list(meta = NULL, issues = issues))
   }
+  
+  # Normalize column names to handle case variations
+  colnames(meta) <- normalize_metadata_columns(colnames(meta))
   
   # Map config-defined id/group columns (support both old and new config structure)
   id_col <- cfg$metadata$id_column %||% "SampleID"
@@ -243,6 +270,15 @@ run_analysis_16s <- function(cfg, pre = NULL) {
     Kingdom == "Bacteria" & !is.na(Phylum) & Phylum != "" & Phylum != "uncharacterized" &
     (is.na(Order) | Order != "Chloroplast") & (is.na(Family) | Family != "Mitochondria")
   )
+  
+  # Prune samples with 0 reads
+  n_samples_before <- nsamples(ps_filtered)
+  ps_filtered <- prune_samples(sample_sums(ps_filtered) > 0, ps_filtered)
+  n_samples_after <- nsamples(ps_filtered)
+  if (n_samples_after < n_samples_before) {
+    message(sprintf("[analysis-16S] Removed %d samples with 0 reads after filtering.", n_samples_before - n_samples_after))
+  }
+  if (n_samples_after == 0) stop("[analysis-16S] No samples remaining after filtering.")
 
   # Rarefy if requested
   if (!is.null(cfg$analysis$rarefaction_depth) && cfg$analysis$rarefaction_depth > 0) {

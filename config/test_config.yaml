@@ -1,0 +1,92 @@
+# Test Configuration for Pipeline Integration Testing
+# This config is used by scripts/test_pipeline.sh
+
+project:
+  name: "Pipeline-Integration-Test"
+  sequencing_type: "16S"
+  output_dir: "output"
+  first_run: false
+  random_seed: 1234
+  threads: 2
+
+io:
+  input_dir: "test_data/fastq"
+  cohort: "test"
+  metadata_csv: "test_data/metadata.csv"
+
+metadata:
+  id_column: "sample_id"
+  primary_comparison:
+    group_column: "group"
+    levels: ["Control", "Treatment"]
+    reference: "Control"
+
+amplicon:
+  region: "V3-V4"
+  fwd_primer: "CCTACGGGNGGCWGCAG"
+  rev_primer: "GACTACHVGGGTATCTAATCC"
+  expected_length:
+    min: 400
+    max: 470
+  phylogeny:
+    build_tree: false  # Disabled for faster testing
+  dada2:
+    truncLen: [0, 0]
+    maxEE: [3, 5]
+    truncQ: 2
+    minLen: 100
+
+taxonomy:
+  train_set: "silva_nr99_v138.1_train_set.fa"
+  species_assignment: "silva_species_assignment_v138.1.fa"
+  minBoot: 50
+
+diversity:
+  rarefaction:
+    enabled: true
+    depth: "auto"
+  alpha:
+    metrics:
+      - "Shannon"
+      - "Observed"
+  beta:
+    methods:
+      - "bray"
+    permutations: 999
+
+analysis:
+  mode: "simple"  # Simple mode for faster testing
+  alpha:
+    stratify_by_secondary: false
+    correlate_continuous: false
+  beta:
+    test_multifactor: false
+    plot_secondary: false
+  differential_abundance:
+    enabled: false  # Disabled for faster testing
+  group_comparisons:
+    enabled: false
+
+plots:
+  enable:
+    alpha: true
+    beta: true
+    composition: true
+    heatmap: false  # Disabled for faster testing
+    tree_rectangular: false
+    tree_circular: false
+    group_comparisons: false
+    differential_abundance: false
+  dpi: 300  # Lower DPI for faster testing
+  width: 8
+  height: 6
+  base_size: 12
+  theme: "classic"
+  color_palette: "okabe-ito"
+  output:
+    formats: ["tiff"]  # Only TIFF for testing
+
+filtering:
+  min_reads_per_sample: 100  # Lowered for test data
+  min_prevalence: 0.1
+  min_abundance: 0.0001

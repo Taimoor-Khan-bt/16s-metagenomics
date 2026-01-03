@@ -83,7 +83,7 @@ validate_config <- function(config_path) {
         # Check for FASTQ files
         fastq_files <- list.files(
           cfg$io$input_dir, 
-          pattern = "\\.fastq\\.gz$", 
+          pattern = "\\.(fastq|fq)\\.gz$", 
           recursive = FALSE
         )
         if (length(fastq_files) == 0) {

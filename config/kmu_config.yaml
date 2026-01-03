@@ -11,7 +11,7 @@ project:
 io:
   input_dir: "KMU_Shahzad_2024"
   cohort: "KMU_2024"
-  metadata_csv: "metadata.csv"
+  metadata_csv: "KMU_Shahzad_2024_metadata.csv"
 
 metadata:
   id_column: "SampleID"

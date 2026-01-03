@@ -223,8 +223,8 @@ validate_numeric_range <- function(value, param_name, min = NULL, max = NULL, al
 #' @return List with 'valid' (logical), 'messages' (character vector), and 'pairs' (data frame)
 #' @export
 validate_fastq_pairs <- function(fastq_dir, 
-                                 forward_pattern = "_1\\.fastq\\.gz$",
-                                 reverse_pattern = "_2\\.fastq\\.gz$") {
+                                 forward_pattern = "_1\\.(fastq|fq)\\.gz$",
+                                 reverse_pattern = "_2\\.(fastq|fq)\\.gz$") {
   messages <- character()
   valid <- TRUE
   

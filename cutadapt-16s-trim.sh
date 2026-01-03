@@ -4,18 +4,54 @@
 # Author: Taimoor Khan
 # Email: taimoorkhan007.tk@gmail.com
 # Date: October 20, 2025
+#
+# This script is designed to be modular. It accepts an input
+# directory containing paired-end FASTQ files and an output
+# directory where trimmed files will be saved.
+#
+# Usage:
+# ./cutadapt-16s-trim.sh <input_directory> <output_directory>
+#
+# Example:
+# ./cutadapt-16s-trim.sh "raw_data" "trimmed_data"
 # ============================================================
 
 # Exit immediately if a command exits with a non-zero status
 set -euo pipefail
 
+# Error handler
+trap 'trim_error_handler $? $LINENO' ERR
+
+trim_error_handler() {
+    local exit_code=$1
+    local line_number=$2
+    echo ""
+    echo "=========================================="
+    echo "ERROR: Trimming failed at line $line_number with exit code $exit_code"
+    echo "=========================================="
+    echo "Last sample being processed: ${SAMPLE_ID:-unknown}"
+    echo "Check cutadapt output above for details."
+    echo ""
+    exit "$exit_code"
+}
+
+# ============================================================
+# Script Usage and Argument Validation
+# ============================================================
+
+if [[ "$#" -ne 2 ]]; then
+    echo "Usage: $0 <input_directory> <output_directory>"
+    echo "Example: $0 raw_reads trimmed_reads"
+    exit 1
+fi
+
+# Input and output directories from arguments
+INPUT_DIR="$1"
+OUTPUT_DIR="$2"
+
 # ============================================================
 # Configuration Section - MODIFY AS NEEDED
 # ============================================================
-
-# Input and output directories
-INPUT_DIR="HF"
-OUTPUT_DIR="${INPUT_DIR}/trimmed"
 
 # Default primer sequences (Illumina V4 region)
 # IMPORTANT: Replace these with your actual primer sequences!
@@ -41,8 +77,8 @@ if [[ ! -d "$INPUT_DIR" ]]; then
     exit 1
 fi
 
-if [[ -z "$(ls -A $INPUT_DIR/*.fastq.gz 2>/dev/null)" ]]; then
-    echo "Error: No .fastq.gz files found in '$INPUT_DIR'!"
+if [[ -z "$(ls -A $INPUT_DIR/*.fq.gz 2>/dev/null)" ]]; then
+    echo "Error: No .fq.gz files found in '$INPUT_DIR'!"
     echo "Please ensure your input files are gzipped FASTQ files."
     exit 1
 fi
@@ -72,10 +108,10 @@ STATS_FILE="${OUTPUT_DIR}/trimming_statistics.tsv"
 echo -e "Sample\tInput_Reads\tPrimer_Found\tPassed_Filters\tPercent_Kept" > "$STATS_FILE"
 
 # Process each pair of FASTQ files
-for R1 in ${INPUT_DIR}/*_1.fastq.gz; do
+for R1 in ${INPUT_DIR}/*_1.fq.gz; do
     # Extract sample name
-    SAMPLE=$(basename "$R1" _1.fastq.gz)
-    R2="${INPUT_DIR}/${SAMPLE}_2.fastq.gz"
+    SAMPLE=$(basename "$R1" _1.fq.gz)
+    R2="${INPUT_DIR}/${SAMPLE}_2.fq.gz"
     
     # Validate input files
     if [[ ! -f "$R2" ]]; then
@@ -86,9 +122,9 @@ for R1 in ${INPUT_DIR}/*_1.fastq.gz; do
     echo "Processing sample: ${SAMPLE}" | tee -a "$LOGFILE"
     
     # Run cutadapt with comprehensive parameters
-    # Use a subshell and capture stderr/stdout; do not exit the whole script on failure
-    set +e
-    CUTADAPT_OUTPUT=$(cutadapt \
+    # Note: This script assumes it's being called by a parent script
+    # that has already activated the correct Conda environment.
+    cutadapt \
         -g "${FWD_PRIMER}" \
         -G "${REV_PRIMER}" \
         -o "${OUTPUT_DIR}/${SAMPLE}_R1_trimmed.fastq.gz" \
@@ -100,15 +136,25 @@ for R1 in ${INPUT_DIR}/*_1.fastq.gz; do
         --discard-untrimmed \
         --trim-n \
         --max-n 0 \
-        "$R1" "$R2" 2>&1)
-    CUTADAPT_STATUS=$?
-    set -e
-
-    if [[ $CUTADAPT_STATUS -ne 0 ]]; then
-        echo "❌ cutadapt failed for sample ${SAMPLE}. See details below:" | tee -a "$LOGFILE"
-        echo "$CUTADAPT_OUTPUT" | tee -a "$LOGFILE"
+        "$R1" "$R2" > "${OUTPUT_DIR}/${SAMPLE}_cutadapt.log"
+    
+    # Extract statistics from the log file
+    CUTADAPT_OUTPUT=$(cat "${OUTPUT_DIR}/${SAMPLE}_cutadapt.log")
+    
+    # Append the individual log to the main logfile
+    echo "--- Log for sample: ${SAMPLE} ---" >> "$LOGFILE"
+    cat "${OUTPUT_DIR}/${SAMPLE}_cutadapt.log" >> "$LOGFILE"
+    echo "--- End log for sample: ${SAMPLE} ---" >> "$LOGFILE"
+    echo "" >> "$LOGFILE"
+    
+    # Check if cutadapt produced output files. We check this instead of exit code
+    # because cutadapt can exit 0 even if no pairs are written.
+    if [[ ! -f "${OUTPUT_DIR}/${SAMPLE}_R1_trimmed.fastq.gz" ]] || [[ ! -s "${OUTPUT_DIR}/${SAMPLE}_R1_trimmed.fastq.gz" ]]; then
+        echo "❌ cutadapt produced no output for sample ${SAMPLE}. See log for details." | tee -a "$LOGFILE"
         echo "Skipping ${SAMPLE}." | tee -a "$LOGFILE"
         echo "----------------------------------------" >> "$LOGFILE"
+        # Add a failed entry to the stats file
+        echo -e "${SAMPLE}\t0\t0\t0\t0.00" >> "$STATS_FILE"
         continue
     fi
     

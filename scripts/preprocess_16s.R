@@ -21,12 +21,12 @@ match_sample_ids <- function(file_samples, meta_samples) {
     "-[A-Z]+[0-9]+$",        # Remove -ABC### suffix (generic)
     "_S[0-9]+$",             # Remove _S## Illumina sample number
     "_[0-9]+$",              # Remove trailing _###
-    "^([^_-]+[-_][0-9]+).*", # Extract prefix up to first ID (e.g., KMUN-001 from KMUN-001-LFM4957)
-    "^([A-Z]+-[0-9]+).*"     # Extract pattern like ABC-123
+    "^([^_-]+[-_][0-9]+[A-Za-z]*).*", # Extract prefix up to first ID (e.g., KMUN-001 from KMUN-001-LFM4957)
+    "^([A-Z]+-[0-9]+[A-Za-z]*).*"     # Extract pattern like ABC-123
   )
   
   for (pattern in patterns) {
-    if (grepl("^\\(", pattern)) {
+    if (grepl("\\(", pattern)) {
       # Extraction pattern
       test_ids <- sub(pattern, "\\1", file_samples)
     } else {
@@ -59,33 +59,31 @@ run_preprocess_16s <- function(cfg) {
   dir.create(trimmed_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(filtered_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Locate trimmed reads: prefer <output_dir>/trimmed, then <input_dir>/trimmed, else raw reads
+  # Locate trimmed reads: prefer <output_dir>/<cohort>/trimmed, then <input_dir>/trimmed, else raw reads
   input_dir <- cfg$io$input_dir
-  trimmed_src_output <- file.path(base_out, "trimmed") # Check the pipeline's main trimmed output
   trimmed_src_input <- file.path(input_dir, "trimmed") # Check for a pre-existing trimmed dir
 
-  if (dir.exists(trimmed_src_output) && length(list.files(trimmed_src_output, pattern = "\\.fastq\\.gz$")) > 0) {
-    message("[preprocess-16S] Found trimmed files in pipeline output directory: ", trimmed_src_output)
-    # Copy trimmed FASTQs into cohort-specific output for provenance
-    tfiles <- list.files(trimmed_src_output, pattern = "\\.fastq\\.gz$", full.names = TRUE)
-    file.copy(tfiles, trimmed_dir, overwrite = TRUE)
+  # 1. Check if files are already in the destination (e.g. from run_pipeline.sh)
+  if (dir.exists(trimmed_dir) && length(list.files(trimmed_dir, pattern = "\\.(fastq|fq)\\.gz$")) > 0) {
+     message("[preprocess-16S] Using trimmed files found in cohort output: ", trimmed_dir)
   } else if (dir.exists(trimmed_src_input)) {
+    # 2. Check if they are in input/trimmed
     message("[preprocess-16S] Found trimmed files in input subdirectory: ", trimmed_src_input)
     # Copy trimmed FASTQs into cohort output for provenance
-    tfiles <- list.files(trimmed_src_input, pattern = "\\.fastq\\.gz$", full.names = TRUE)
+    tfiles <- list.files(trimmed_src_input, pattern = "\\.(fastq|fq)\\.gz$", full.names = TRUE)
     if (length(tfiles)) file.copy(tfiles, trimmed_dir, overwrite = TRUE)
   }
 
   # Use trimmed files if present, else fall back to pattern in input_dir
-  fnFs <- sort(list.files(trimmed_dir, pattern = "_R1_trimmed\\.fastq\\.gz$", full.names = TRUE))
-  fnRs <- sort(list.files(trimmed_dir, pattern = "_R2_trimmed\\.fastq\\.gz$", full.names = TRUE))
+  fnFs <- sort(list.files(trimmed_dir, pattern = "_R1_trimmed\\.(fastq|fq)\\.gz$", full.names = TRUE))
+  fnRs <- sort(list.files(trimmed_dir, pattern = "_R2_trimmed\\.(fastq|fq)\\.gz$", full.names = TRUE))
   if (length(fnFs) == 0 || length(fnRs) == 0) {
-    fnFs <- sort(list.files(input_dir, pattern = "_1\\.fastq\\.gz$|_R1\\.fastq\\.gz$", full.names = TRUE))
-    fnRs <- sort(list.files(input_dir, pattern = "_2\\.fastq\\.gz$|_R2\\.fastq\\.gz$", full.names = TRUE))
+    fnFs <- sort(list.files(input_dir, pattern = "(_1|_R1)\\.(fastq|fq)\\.gz$", full.names = TRUE))
+    fnRs <- sort(list.files(input_dir, pattern = "(_2|_R2)\\.(fastq|fq)\\.gz$", full.names = TRUE))
   }
 
   # Sample names
-  sample.names <- gsub("_R1_trimmed\\.fastq\\.gz$|_R1\\.fastq\\.gz$|_1\\.fastq\\.gz$", "", basename(fnFs))
+  sample.names <- gsub("_R1_trimmed\\.(fastq|fq)\\.gz$|(_1|_R1)\\.(fastq|fq)\\.gz$", "", basename(fnFs))
 
   # Filter by metadata if available
   meta_path <- cfg$io$metadata_csv
@@ -121,6 +119,15 @@ run_preprocess_16s <- function(cfg) {
   if (length(fnFs) != length(fnRs) || length(fnFs) == 0) {
     stop("[preprocess-16S] Could not detect paired FASTQ files.")
   }
+  
+  # Verify R1/R2 pairing
+  r1_samples <- gsub("_R1_trimmed\\.(fastq|fq)\\.gz$|(_1|_R1)\\.(fastq|fq)\\.gz$", "", basename(fnFs))
+  r2_samples <- gsub("_R2_trimmed\\.(fastq|fq)\\.gz$|(_2|_R2)\\.(fastq|fq)\\.gz$", "", basename(fnRs))
+  if (!all(r1_samples == r2_samples)) {
+    unpaired <- setdiff(union(r1_samples, r2_samples), intersect(r1_samples, r2_samples))
+    stop(sprintf("[preprocess-16S] Unmatched R1/R2 pairs detected: %s", paste(head(unpaired, 5), collapse=", ")))
+  }
+  message(sprintf("[preprocess-16S] Verified %d properly paired FASTQ files", length(fnFs)))
 
   # Filter and trim (reads are already primer-trimmed)
   filtFs <- file.path(filtered_dir, paste0(sample.names, "_F_filt.fastq.gz"))
