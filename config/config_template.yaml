@@ -1,195 +1,77 @@
-## Global configuration for metagenomics analyses (16S and shotgun)
-## Copy this file and edit as needed for your study.
+# =============================================================================
+# config/config.yaml — User configuration for the QIIME 2 Snakemake pipeline
+# =============================================================================
+# Edit this file for each study. All paths may be absolute or relative to the
+# project root (the directory where you run snakemake).
 
-project:
-  name: "oral-caries-study"
-  sequencing_type: "16S"   # one of: 16S | shotgun
-  random_seed: 1234
-  threads: 8
-  output_dir: "output"      # base output folder
-  temp_dir: "tmp"
-  first_run: false           # when true, runner will invoke setup to install pkgs, download refs, and scaffold folders
+# ── Docker ──────────────────────────────────────────────────────────────────
+docker:
+  image: "quay.io/qiime2/amplicon:2024.10"
+  # Pull with: docker pull quay.io/qiime2/amplicon:2024.10
 
-io:
-  input_dir: "HF"           # folder with RAW fastq files
-  metadata_csv: "metadata.csv"
-  sample_pattern: "*_R{1,2}_*.fastq.gz"  # glob pattern for paired FASTQ
-  cohort: null               # optional cohort name; if null, uses basename(input_dir)
+# ── Input / Output ───────────────────────────────────────────────────────────
+samples:       "config/samples.tsv"        # sample_id | r1 | r2 (one sample per row)
+metadata_file: "config/metadata.tsv"       # QIIME 2 metadata (#SampleID header)
+classifier: "refs/silva-138-99-nb-classifier.qza"
+output_dir: "output/qiime2_run"         # all artifacts + QZVs written here
 
-setup:
-  install_packages: true
-  scripts_repo: null         # optional: e.g., "https://github.com/<user>/16s-metagenomics.git"
-  taxonomy_urls:
-    silva_train_set: null    # optional URL; if provided and file missing, will download
-    silva_species: null      # optional URL; if provided and file missing, will download
+# ── DADA2 denoising (Paired-End) ─────────────────────────────────────────────
+dada2:
+  trunc_len_f: 220     # truncate forward reads at this position (bp); 0 = no truncation
+  trunc_len_r: 220     # truncate reverse reads at this position
+  trim_left_f: 0       # trim N bases from the forward 5' end
+  trim_left_r: 0       # trim N bases from the reverse 5' end
+  threads: 0         # 0 = use all available cores
 
+# ── Diversity ────────────────────────────────────────────────────────────────
+diversity:
+  sampling_depth: 'auto'    # 'auto' or 0 = auto-detect minimum read count to avoid dropping samples
+  alpha_metrics:
+    - faith_pd
+    - shannon
+    - evenness
+    - observed_features
+  beta_metrics:
+    - unweighted_unifrac
+    - weighted_unifrac
+    - bray_curtis
+    - jaccard
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
 metadata:
-  id_column: "SampleID"     # column with unique sample IDs matching FASTQ basenames
-  
-  # Primary comparison (REQUIRED)
-  primary_comparison:
-    group_column: "Group"   # main grouping variable (e.g., case/control, treatment)
-    levels: null            # optional: explicit order of levels, e.g., ["Control", "Treatment"]
-    reference: null         # optional: reference level for contrasts, e.g., "Control"
-  
-  # Secondary comparisons (OPTIONAL - for standard/comprehensive modes)
-  # Compare groups INDEPENDENTLY or stratify primary comparison
-  secondary_comparisons:
-    - variable: "Sex"
-      enabled: false        # set to true to include
-    - variable: "AgeCategory"
-      enabled: false
-    # Add more as needed
-  
-  # Continuous variables (OPTIONAL - for comprehensive mode)
-  # Correlate with diversity metrics
-  continuous_variables:
-    - name: "AgeMonths"
-      enabled: false
-    - name: "dmft"
-      enabled: false
-    - name: "Hemoglobin"
-      enabled: false
-    # Add more as needed
-  
-  # Composite scores (OPTIONAL - for comprehensive mode)
-  # Create derived variables from multiple indicators
-  composite_scores:
-    - name: "NutritionalRisk"
-      enabled: false
-      method: "count_positive"  # count_positive | sum | mean | any | all
-      components: ["Stunting", "Underweight", "Wasting", "Anemia"]
-      positive_values: ["yes", "1", "positive"]
-      categories:
-        cutoffs: [0, 1, 2, 4]   # must have length(labels) + 1
-        labels: ["None", "Low", "Moderate", "High"]
-    # Add more composite scores as needed
-  
-  # Covariates for multifactor models
-  covariates: ["Age", "Sex", "Batch"]
-  block_column: null         # e.g., SubjectID for matched/paired designs
+  group_column: "Stunting"   # column for alpha/beta group significance tests
+                             # must have ≥2 samples per category
 
-filters:
-  min_sample_reads: 2000     # flag samples below this threshold
-  min_feature_prevalence: 0.01  # as fraction of samples
-  min_feature_abundance: 1e-5    # relative abundance threshold for pruning
-
-plots:
-  dpi: 600                  # Publication quality
-  width: 12                 # Increased for multi-panel plots
-  height: 8
-  base_size: 14             # Larger font for readability
-  theme: "classic"          # classic | minimal | bw
-  color_palette: "okabe-ito"  # okabe-ito (colorblind-friendly) | viridis | tableau10 | plasma
-  # ranks used for composition barplots and top-N taxa
-  ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
-  top_taxa: 10              # For composition plots
-  heatmap_top: 15           # Top taxa for heatmap (increased for detail)
-  enable:
-    alpha: true
-    composition: true
-    heatmap: true
-    ordination: true
-    tree_rectangular: true
-    tree_circular: true
-    group_comparisons: false       # Enable for comprehensive mode
-    differential_abundance: false  # Enable for comprehensive mode
-  output:
-    formats: ["tiff", "pdf"]       # Save in multiple formats
-
+# ── Extended analysis strategy ───────────────────────────────────────────────
 analysis:
-  # Analysis mode determines complexity and analyses performed
-  # - simple: Basic 2-group comparison (primary only)
-  # - standard: + secondary comparisons (Sex, Age, etc.)
-  # - comprehensive: + correlations, interactions, stratified analyses
-  mode: "standard"          # simple | standard | comprehensive
+  group_column: "Stunting"           # primary comparison variable
   
-  seed: 42                  # random seed for reproducibility
+  # ── Confounders / Covariates ───────────────────────────────────────────────
+  # These variables are included in the GLM (Alpha diversity) and 
+  # PERMANOVA / adonis2 (Beta diversity) models to adjust for confounding.
+  # Ensure these exact names match your metadata column headers!
+  covariates:
+    - "Agemons"             # Age
+    - "Sex"                 # Gender
+    - "Caries_Severity"     # DMFT Category (or use DMFT_Score)
+    # - "Toothbrush_Use"    # Add this column to your metadata first!
   
-  # Alpha diversity settings
-  alpha:
-    metrics: ["Shannon", "Observed", "Simpson"]
-    stratify_by_secondary: false   # run primary comparison WITHIN each secondary level
-    correlate_continuous: false     # correlate metrics with continuous variables
-  
-  # Beta diversity settings
-  beta:
-    metrics: ["bray"]              # bray | unifrac | wunifrac | jaccard
-    ordination: "PCoA"             # PCoA | NMDS
-    test_multifactor: false        # PERMANOVA with interactions (Group + Sex + Group:Sex)
-    plot_secondary: false          # ordination plots colored by secondary variables
-    test_dispersion: true          # check PERMDISP assumption
-  
-  # Differential abundance settings
-  differential_abundance:
-    enabled: false
-    methods: ["deseq2"]            # deseq2 | ancombc2 | aldex2
-    taxonomic_rank: "Genus"        # Which rank to test
-    min_prevalence: 0.1            # Only test taxa present in >10% samples
-    min_abundance: 0.0001          # Minimum relative abundance
-    p_adjust_method: "fdr"         # FDR correction
-    log2fc_threshold: 1.0          # Effect size threshold
-    alpha_threshold: 0.1           # Exploratory threshold (highlight p<0.05)
-  
-  # Group comparisons across metadata variables
-  group_comparisons:
-    enabled: false                 # Compare taxonomic profiles across all metadata groups
-    variables: ["Group", "Sex", "AgeCategory"]  # Variables to compare
-    taxonomic_ranks: ["Phylum", "Class", "Order", "Family", "Genus"]
-    top_n: 15                      # Show top N taxa per comparison
-    include_stats: true            # Add statistical annotations to plots
-    alpha_threshold: 0.1           # Exploratory threshold
-    highlight_threshold: 0.05      # Highlight significant results
+  # Taxonomy levels: 2=Phylum, 3=Class, 6=Genus (SILVA)
+  collapse_levels:
+    - "2"   # phylum
+    - "3"   # class
+    - "6"   # genus
+  ancombc_levels:
+    - "2"   # phylum differential abundance
+    - "6"   # genus differential abundance
     
-  # Pairwise comparisons (comprehensive mode)
-  pairwise_comparisons:
-    enabled: false
-    contrasts:
-      - group1: "Severe caries"
-        group2: "Caries free"
-      - group1: "Moderate caries"
-        group2: "Caries free"
-    # Bonferroni correction applied automatically
+  # Formula passed to ANCOM-BC for differential abundance testing.
+  # The formula MUST include your primary group_column plus confounders.
+  ancombc_formula: "Stunting + Agemons + Sex + Caries_Severity"
   
-  rarefaction_depth: 0       # 0 to skip rarefaction, else integer
-  p_adjust: "BH"             # BH | bonferroni | holm
+  core_prevalence: 0.5                            # fraction of samples to define core
 
-## 16S-specific settings
-amplicon:
-  primers:
-    forward: "GTGYCAGCMGCCGCGGTAA"   # 515F (example)
-    reverse: "GGACTACNVGGGTWTCTAAT"  # 806R (example)
-    region:  "V4"
-  dada2:
-    truncLen: [0, 0]
-    maxEE: [3, 5]
-    truncQ: 2
-    minLen: 100
-  taxonomy:
-    silva_train_set: "silva_nr99_v138.1_train_set.fa"
-    silva_species: "silva_species_assignment_v138.1.fa"
-  phylogeny:
-    build_tree: true            # requires phangorn
-    max_tips: 100               # Reduced for readable trees
-  functional_inference:
-    method: "none"             # picrust2 | tax4fun2 | none
-
-## Shotgun-specific settings
-shotgun:
-  qc:
-    run_fastqc: true
-    run_multiqc: true
-  host_depletion:
-    enabled: true
-    reference: "GRCh38"
-  taxonomy:
-    tool: "metaphlan4"       # metaphlan4 | kraken2
-  function:
-    tool: "humann"           # humann
-    humann_database:
-      chocophlan: "chocophlan"
-      uniref90: "uniref90"
-  min_read_len: 50
-
-legacy:
-  run_complete_16s_script: false   # legacy mode disabled; use modular pipeline scripts
+# ── PICRUSt2 ─────────────────────────────────────────────────────────────────
+picrust:
+  env: "picrust2"        # conda env name with PICRUSt2 installed
+  # Install: mamba create -n picrust2 -c conda-forge -c bioconda picrust2 -y

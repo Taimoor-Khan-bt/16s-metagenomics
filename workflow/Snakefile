@@ -1,0 +1,121 @@
+# =============================================================================
+# Snakefile — QIIME 2 16S rRNA Pipeline
+# =============================================================================
+# All QIIME 2 steps run inside the official Docker image.
+# No QIIME 2 conda installation required.
+#
+# Quick start:
+#   1. bash setup.sh
+#   2. Edit config/config.yaml  (paths + parameters)
+#   3. Edit config/samples.tsv  (sample_id + r1 path per line)
+#   4. Edit config/metadata.tsv (QIIME 2 metadata, #SampleID header)
+#   5. snakemake --cores all
+#
+# Dry run (no Docker needed):
+#   snakemake -n
+# =============================================================================
+
+import os
+import pandas as pd
+
+configfile: "config/config.yaml"
+
+# ── Validate required config keys ────────────────────────────────────────────
+for key in ["docker", "samples", "output_dir", "metadata", "classifier", "dada2", "diversity"]:
+    if key not in config:
+        raise ValueError(f"Missing required config key: '{key}'")
+
+# ── Load sample sheet ─────────────────────────────────────────────────────────
+SAMPLES_DF = pd.read_table(config["samples"], comment="#").set_index("sample_id", drop=False)
+SAMPLES    = SAMPLES_DF.index.tolist()
+
+if not SAMPLES:
+    raise ValueError(f"No samples found in {config['samples']}")
+
+OUT           = config["output_dir"]
+ALPHA_METRICS = config["diversity"]["alpha_metrics"]
+BETA_METRICS  = config["diversity"]["beta_metrics"]
+
+# Extended analysis config (optional — only used by all_extended)
+COLLAPSE_LEVELS = config.get("analysis", {}).get("collapse_levels", ["2", "3", "6"])
+ANCOMBC_LEVELS  = config.get("analysis", {}).get("ancombc_levels", ["2", "6"])
+
+# ── Include rule modules ───────────────────────────────────────────────────────
+include: "rules/common.smk"
+include: "rules/import.smk"
+include: "rules/denoise.smk"
+include: "rules/taxonomy.smk"
+include: "rules/phylogeny.smk"
+include: "rules/visualize.smk"
+include: "rules/diversity.smk"
+include: "rules/barplot.smk"
+include: "rules/export.smk"
+# ── Extended analysis rule modules ────────────────────────────────────────────
+include: "rules/composition.smk"
+include: "rules/statistics.smk"
+include: "rules/differential.smk"
+include: "rules/picrust.smk"
+
+# ── Target rule: base pipeline outputs ───────────────────────────────────────
+rule all:
+    input:
+        # ── Core QIIME 2 artifacts ─────────────────────────────────────────
+        f"{OUT}/sequences.qza",
+        f"{OUT}/table.qza",
+        f"{OUT}/rep_seqs.qza",
+        f"{OUT}/dada2_stats.qza",
+        f"{OUT}/taxonomy.qza",
+        f"{OUT}/rooted_tree.qza",
+        # ── Summary visualizations ─────────────────────────────────────────
+        f"{OUT}/dada2_stats.qzv",
+        f"{OUT}/table_summary.qzv",
+        f"{OUT}/rep_seqs.qzv",
+        f"{OUT}/taxa_barplot.qzv",
+        # ── Diversity QZVs ─────────────────────────────────────────────────
+        expand(f"{OUT}/core_diversity/{{metric}}_correlation.qzv",
+               metric=ALPHA_METRICS),
+        # ── Exported flat files ────────────────────────────────────────────
+        f"{OUT}/exported/feature_table/feature-table.tsv",
+        f"{OUT}/exported/taxonomy/taxonomy.tsv",
+        f"{OUT}/exported/tree/tree.nwk",
+        f"{OUT}/exported/rep_seqs/dna-sequences.fasta",
+        f"{OUT}/exported/dada2_stats/stats.tsv",
+        expand(f"{OUT}/exported/alpha_diversity/{{metric}}/alpha-diversity.tsv",
+               metric=ALPHA_METRICS),
+
+# ── Target rule: full extended analysis (A–G) ─────────────────────────────────
+# Run with: snakemake all_extended --cores all --snakefile workflow/Snakefile
+rule all_extended:
+    input:
+        # ─ Base pipeline (inherited) ───────────────────────────────────────
+        rules.all.input,
+        # ─ A: Alpha diversity statistics ──────────────────────────────────
+        f"{OUT}/stats/alpha/alpha_statistics.tsv",
+        f"{OUT}/stats/alpha/alpha_plots.pdf",
+        expand(f"{OUT}/stats/alpha/{{metric}}_group_significance.qzv",
+               metric=ALPHA_METRICS),
+        # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────
+        expand(f"{OUT}/stats/beta/{{beta_metric}}_permanova.qzv",
+               beta_metric=BETA_METRICS),
+        expand(f"{OUT}/stats/beta/{{beta_metric}}_distance_matrix.tsv",
+               beta_metric=["bray_curtis", "weighted_unifrac"]),
+        f"{OUT}/stats/beta/permanova_results.tsv",
+        f"{OUT}/stats/beta/pcoa_plots.pdf",
+        # ─ C: Composition analysis ─────────────────────────────────────────
+        expand(f"{OUT}/composition/{{level}}_relfreq.tsv", level=COLLAPSE_LEVELS),
+        expand(f"{OUT}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),
+        f"{OUT}/composition/composition_plots.pdf",
+        f"{OUT}/composition/krona.html",
+        # ─ D: Differential abundance ──────────────────────────────────────
+        expand(f"{OUT}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
+        expand(f"{OUT}/differential/ancombc_level{{level}}.tsv", level=ANCOMBC_LEVELS),
+        f"{OUT}/differential/lefse_results.tsv",
+        f"{OUT}/differential/lefse_plots.pdf",
+        # ─ E: Core microbiome ─────────────────────────────────────────────
+        f"{OUT}/core_microbiome/core_features.qzv",
+        f"{OUT}/core_microbiome/core_stats.tsv",
+        f"{OUT}/core_microbiome/core_plots.pdf",
+        # ─ G: PICRUSt2 functional prediction ─────────────────────────────
+        f"{OUT}/picrust2/pathway_differential.tsv",
+        f"{OUT}/picrust2/pathway_plots.pdf",
+

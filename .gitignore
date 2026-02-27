@@ -17,9 +17,8 @@ SILVA_*.fasta
 silva_*.fa
 
 # Input data directories
-HF/
-KMU_Shahzad_2024/
-test_data/
+data/
+!data/.gitkeep
 
 # Output files
 output/
@@ -27,6 +26,17 @@ output/
 
 # Log files
 *.log
+analysis_final.log
+analysis_debug.log
+pipeline_*.log
+test_da_modules_*.log
+viz_final.log
+r_package_install.log
+
+# Provenance files
+provenance_*.yaml
+
+# Temporary metadata files
 
 # Temporary metadata files
 *_clean.csv
@@ -69,8 +79,20 @@ RELEASE_*.md
 *_SUMMARY.md
 
 # Old scripts
-cutadapt-16s-trim.sh
+# cutadapt-16s-trim.sh
 test_phase3.sh
 16s-metagenomics.R
 16s-metagenomics-vis.R
 16s_pipeline.yaml
+# ── Dynamic Config Files ─────────────────────────────────────────────────────
+# Ignore the active configuration and sample sheets that are specific to the 
+# user's current local run, but track the templates.
+config/config.yaml
+config/samples.tsv
+config/metadata.tsv
+
+# ── Reference Databases ──────────────────────────────────────────────────────
+# Ignore large pre-trained classifier and reference sequence artifacts
+refs/
+*.qza
+*.qzv
