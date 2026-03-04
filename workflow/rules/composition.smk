@@ -87,7 +87,7 @@ rule export_relfreq:
 rule viz_taxa_barplot_level:
     """QIIME 2 taxa barplot forced to a specific level (for QZV download)."""
     input:
-        table    = f"{_COMP}/{{level}}_table.qza",
+        table    = f"{OUT}/table.qza",
         taxonomy = f"{OUT}/taxonomy.qza",
         metadata = config["metadata_file"],
     output:

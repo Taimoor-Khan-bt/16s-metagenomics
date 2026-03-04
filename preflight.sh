@@ -56,15 +56,15 @@ else
   fix "Install Docker: https://docs.docker.com/get-docker/"
 fi
 
-# mamba / conda
+# mamba / mamba
 if command -v mamba &>/dev/null; then
   pass "mamba: $(mamba --version 2>/dev/null | head -1)"
 elif command -v conda &>/dev/null; then
   warn "mamba not found — conda available (mamba is faster)"
   fix "Install mamba: conda install -n base -c conda-forge mamba -y"
 else
-  fail "conda/mamba: not installed"
-  fix "Install miniforge: https://github.com/conda-forge/miniforge"
+  fail "mamba/mamba: not installed"
+  fix "Install miniforge: https://github.com/mamba-forge/miniforge"
 fi
 
 # python3
@@ -80,7 +80,7 @@ section "QIIME 2 Docker image"
 
 IMG="quay.io/qiime2/amplicon:2024.10"
 if docker image inspect "$IMG" &>/dev/null 2>&1; then
-  SIZE=$(docker image inspect "$IMG" --format='{{.Size}}' 2>/dev/null | \
+  SIZE=$(docker image inspect "$IMG" --format='{{.Size}}' 2>/dev/null |
          awk '{printf "%.1f GB", $1/1073741824}')
   pass "image: $IMG ($SIZE)"
   # Quick functional test
@@ -103,20 +103,20 @@ fi
 section "Snakemake (env: $QIIME2_ENV)"
 # ─────────────────────────────────────────────────────────────────────────────
 
-if conda env list 2>/dev/null | grep -q "^${QIIME2_ENV}[[:space:]]"; then
-  pass "conda env: $QIIME2_ENV exists"
-  if conda run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
-    SM_VER=$(conda run -n "$QIIME2_ENV" snakemake --version 2>/dev/null)
+if mamba env list | awk '{print$1}' | grep -Fxq "$QIIME2_ENV"; then
+  pass "mamba env: $QIIME2_ENV exists"
+  if mamba run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
+    SM_VER=$(mamba run -n "$QIIME2_ENV" snakemake --version 2>/dev/null)
     pass "snakemake: $SM_VER"
     SM_MAJOR=$(echo "$SM_VER" | grep -oE '^[0-9]+')
     [[ "${SM_MAJOR:-0}" -ge 8 ]] || warn "snakemake ≥8.0 recommended (found $SM_VER)"
   else
     fail "snakemake: not installed in env $QIIME2_ENV"
-    fix "mamba install -n $QIIME2_ENV -c conda-forge snakemake -y"
+    fix "mamba install -n $QIIME2_ENV -c conda-forge -c biocomba snakemake -y"
   fi
 else
-  fail "conda env '$QIIME2_ENV': does not exist"
-  fix "mamba create -n $QIIME2_ENV -c conda-forge snakemake python=3.12 -y"
+  fail "mamba env '$QIIME2_ENV': does not exist"
+  fix "mamba create -n $QIIME2_ENV -c conda-forge -c biocomba snakemake python=3.12 -y"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,21 +128,21 @@ check_r_pkg() {
   local result
   # Use installed.packages() — requireNamespace() can return FALSE for installed
   # packages that have broken optional dependencies.
-  result=$(conda run -n "$QIIME2_ENV" Rscript -e \
+  result=$(mamba run -n "$QIIME2_ENV" Rscript -e \
     "cat('$pkg' %in% rownames(installed.packages()))" 2>/dev/null || echo "FALSE")
   if [[ "$result" == "TRUE" ]]; then
-    VER=$(conda run -n "$QIIME2_ENV" Rscript -e \
+    VER=$(mamba run -n "$QIIME2_ENV" Rscript -e \
       "tryCatch(cat(as.character(packageVersion('$pkg'))), error=function(e) cat('installed'))" 2>/dev/null || echo "installed")
     pass "R/$pkg: $VER"
   else
     fail "R/$pkg: not installed"
-    fix "mamba install -n $QIIME2_ENV -c conda-forge r-$(echo "$pkg" | tr '[:upper:]' '[:lower:]') -y"
+    fix "mamba install -n $QIIME2_ENV -c mamba-forge r-$(echo "$pkg" | tr '[:upper:]' '[:lower:]') -y"
   fi
 }
 
 
-if conda run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
-  R_VER=$(conda run -n "$QIIME2_ENV" Rscript --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if mamba run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
+  R_VER=$(mamba run -n "$QIIME2_ENV" Rscript --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   pass "R: $R_VER"
   
   CRAN_PKGS=(ggplot2 dplyr tidyr vegan ape compositions RColorBrewer scales UpSetR ggpubr broom ggrepel)
@@ -153,56 +153,56 @@ if conda run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
   # microbiomeMarker (Bioconductor)
   # Use installed.packages() — requireNamespace() can return FALSE if a
   # dependency is broken even when the package itself is installed.
-  MM_CHECK=$(conda run -n "$QIIME2_ENV" Rscript -e \
+  MM_CHECK=$(mamba run -n "$QIIME2_ENV" Rscript -e \
     "cat('microbiomeMarker' %in% rownames(installed.packages()))" 2>/dev/null || echo "FALSE")
   if [[ "$MM_CHECK" == "TRUE" ]]; then
-    MM_VER=$(conda run -n "$QIIME2_ENV" Rscript -e \
+    MM_VER=$(mamba run -n "$QIIME2_ENV" Rscript -e \
       "tryCatch(cat(as.character(packageVersion('microbiomeMarker'))), error=function(e) cat('installed'))" 2>/dev/null || echo "installed")
     pass "R/microbiomeMarker: $MM_VER"
   else
     warn "R/microbiomeMarker: not installed (LEfSe will use Wilcoxon fallback)"
     fix "In R: BiocManager::install('microbiomeMarker')"
-    fix "  OR: mamba install -n $QIIME2_ENV -c bioconda bioconductor-microbiomemarker -y"
+    fix "  OR: mamba install -n $QIIME2_ENV -c biocomba biocomductor-microbiomemarker -y"
   fi
 else
   fail "R: not installed in env $QIIME2_ENV"
-  fix "mamba install -n $QIIME2_ENV -c conda-forge r-base -y"
+  fix "mamba install -n $QIIME2_ENV -c mamba-forge r-base -y"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "KRONA (env: $QIIME2_ENV)"
 # ─────────────────────────────────────────────────────────────────────────────
 
-if conda run -n "$QIIME2_ENV" which ktImportText &>/dev/null 2>&1; then
+if mamba run -n "$QIIME2_ENV" which ktImportText &>/dev/null 2>&1; then
   pass "KRONA (ktImportText): installed"
 else
   warn "KRONA: not installed (F: KRONA plots will fail)"
-  fix "mamba install -n $QIIME2_ENV -c bioconda krona -y && conda run -n $QIIME2_ENV ktUpdateTaxonomy.sh"
+  fix "mamba install -n $QIIME2_ENV -c biocomba krona -y && mamba run -n $QIIME2_ENV ktUpdateTaxonomy.sh"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "PICRUSt2 (env: $PICRUST_ENV)"
 # ─────────────────────────────────────────────────────────────────────────────
 
-if conda env list 2>/dev/null | grep -q "^${PICRUST_ENV}[[:space:]]"; then
-  pass "conda env: $PICRUST_ENV exists"
-  if conda run -n "$PICRUST_ENV" picrust2_pipeline.py --version &>/dev/null 2>&1; then
-    PC_VER=$(conda run -n "$PICRUST_ENV" picrust2_pipeline.py --version 2>/dev/null || echo "?")
+if mamba env list | awk '{print$1}' | grep -q "$PICRUST_ENV"; then
+  pass "mamba env: $PICRUST_ENV exists"
+  if mamba run -n "$PICRUST_ENV" picrust2_pipeline.py --version &>/dev/null 2>&1; then
+    PC_VER=$(mamba run -n "$PICRUST_ENV" picrust2_pipeline.py --version 2>/dev/null || echo "?")
     pass "PICRUSt2: $PC_VER"
   else
     fail "PICRUSt2: env exists but not functional"
-    fix "mamba install -n $PICRUST_ENV -c conda-forge -c bioconda picrust2 -y"
+    fix "mamba install -n $PICRUST_ENV -c mamba-forge -c biocomba picrust2 -y"
   fi
 else
   warn "PICRUSt2 env '$PICRUST_ENV': not found (G: functional prediction will fail)"
-  fix "mamba create -n $PICRUST_ENV -c conda-forge -c bioconda picrust2 python=3.8 -y"
+  fix "mamba create -n $PICRUST_ENV -c mamba-forge -c biocomba picrust2 python=3.8 -y"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 section "Config & input files"
 # ─────────────────────────────────────────────────────────────────────────────
 
-for f in config/config.yaml config/samples.tsv config/metadata.tsv; do
+for f in config/config_template.yaml config/samples.tsv config/metadata.tsv; do
   if [[ -f "$f" ]]; then
     LINES=$(wc -l < "$f")
     pass "$f ($LINES lines)"
@@ -216,7 +216,7 @@ done
 CLF=$(python3 -c "
 import yaml
 try:
-    c = yaml.safe_load(open('config/config.yaml'))
+    c = yaml.safe_load(open('config/config_template.yaml'))
     print(c.get('classifier','refs/silva-138-99-nb-classifier.qza'))
 except: print('refs/silva-138-99-nb-classifier.qza')
 " 2>/dev/null || echo "refs/silva-138-99-nb-classifier.qza")
@@ -231,8 +231,17 @@ fi
 # Sample FASTQ files
 if [[ -f "config/samples.tsv" ]]; then
   MISSING_FQ=0
-  while IFS=$'\t' read -r sid r1; do
+  
+  # The '|| [ -n "$r1" ]' ensures the last line is read even without a newline
+  while IFS=$'\t' read -r sid r1 || [[ -n "$sid" ]]; do
+    
+    # 1. Clean the variables (Removes hidden \r characters)
+    sid=$(echo "$sid" | tr -d '\r')
+    r1=$(echo "$r1" | tr -d '\r')
+
+    # 2. Skip header, comments, or empty lines
     [[ "$sid" == "sample_id" || "$sid" =~ ^# || -z "$sid" ]] && continue
+    
     if [[ -f "$r1" ]]; then
       SIZE=$(du -sh "$r1" 2>/dev/null | cut -f1)
       pass "FASTQ $sid: $r1 ($SIZE)"
@@ -245,11 +254,11 @@ if [[ -f "config/samples.tsv" ]]; then
 fi
 
 # Metadata columns
-if [[ -f "config/metadata.tsv" && -f "config/config.yaml" ]]; then
+if [[ -f "config/metadata.tsv" && -f "config/config_template.yaml" ]]; then
   python3 -c "
 import yaml, csv, sys
 
-with open('config/config.yaml') as f:
+with open('config/config_template.yaml') as f:
     cfg = yaml.safe_load(f)
 
 group_col = cfg.get('analysis', {}).get('group_column') or \
@@ -281,7 +290,7 @@ for c in checks:
       pass "${line#OK: }"
     elif [[ "$line" == MISSING* ]]; then
       fail "$line"
-      fix "Add column '$(echo "$line" | grep -oP '\".*?\"' | head -1 | tr -d '\"')' to config/metadata.tsv"
+      fix "Add column '$(echo "$line" | grep -oP '\".*?\"' | head -1 | tr -d '"')' to config/metadata.tsv"
     fi
   done
 fi
@@ -290,24 +299,24 @@ fi
 section "Pipeline dry-run"
 # ─────────────────────────────────────────────────────────────────────────────
 
-if conda run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
+if mamba run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
   echo "  Running base pipeline dry-run…"
-  conda run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile >/dev/null 2>&1
+  mamba run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile >/dev/null 2>&1
   if [[ $? -eq 0 ]]; then
     pass "Base pipeline dry-run: OK"
   else
-    ERR=$(conda run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile 2>&1 | \
+    ERR=$(mamba run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile 2>&1 | \
           grep -E "Error|Exception|Missing" | head -3)
     fail "Base pipeline dry-run: FAILED"
     [[ -n "$ERR" ]] && fix "Snakefile error: $ERR"
   fi
 
   echo "  Running extended pipeline dry-run…"
-  conda run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile >/dev/null 2>&1
+  mamba run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile >/dev/null 2>&1
   if [[ $? -eq 0 ]]; then
     pass "Extended pipeline dry-run: OK"
   else
-    ERR=$(conda run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile 2>&1 | \
+    ERR=$(mamba run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile 2>&1 | \
           grep -E "Error|Exception|Missing" | head -3)
     fail "Extended pipeline dry-run: FAILED"
     [[ -n "$ERR" ]] && fix "Snakefile error: $ERR"

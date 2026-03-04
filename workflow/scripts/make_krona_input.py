@@ -11,41 +11,49 @@ taxonomy_file = sys.argv[1]
 table_file    = sys.argv[2]
 out_file      = sys.argv[3]
 
-# Load taxonomy: Feature ID → list of taxon levels
+# 1. Load Taxonomy
 taxonomy = {}
 with open(taxonomy_file) as f:
     reader = csv.DictReader(f, delimiter="\t")
     for row in reader:
         fid  = row["Feature ID"]
         tax  = row["Taxon"].replace("_", " ")
-        # Split on "; " and strip d__/p__/c__ prefixes
-        levels = []
-        for t in tax.split("; "):
-            t = t.strip()
-            if "__" in t:
-                t = t.split("__", 1)[1].strip()
-            if t and t != "":
-                levels.append(t)
+        levels = [t.split("__")[-1].strip() for t in tax.split(";") if t.strip()]
         taxonomy[fid] = levels
 
-# Load feature table (skip first comment line "#Constructed from ...")
+# 2. Process Feature Table
 with open(table_file) as f:
-    lines = f.readlines()
+    # Filter out only the metadata comments, but KEEP the line starting with #OTU ID
+    # We do this by dropping any line that starts with # but NOT with #OTU ID
+    clean_lines = []
+    for line in f:
+        if line.startswith("#") and not line.startswith("#OTU ID"):
+            continue
+        clean_lines.append(line)
 
-# Skip lines starting with #
-data_lines = [l for l in lines if not l.startswith("#")]
-reader = csv.DictReader(data_lines, delimiter="\t")
-samples = [c for c in reader.fieldnames if c != "OTU ID" and c != "#OTU ID"]
+# Use the cleaned lines for DictReader
+reader = csv.DictReader(clean_lines, delimiter="\t")
 
-# Aggregate counts per sample and write one KRONA input file (summed over samples)
+# Identify Sample Names (everything except the ID column)
+id_col = "#OTU ID" if "#OTU ID" in reader.fieldnames else "OTU ID"
+samples = [c for c in reader.fieldnames if c != id_col]
+
+# 3. Write Krona Input
 with open(out_file, "w") as out:
     for row in reader:
-        fid   = row.get("OTU ID") or row.get("#OTU ID") or list(row.values())[0]
-        total = sum(float(row.get(s, 0)) for s in samples)
-        count = int(total)
-        if count == 0:
+        fid = row[id_col]
+        try:
+            # Only sum columns we know are samples
+            total = sum(float(row[s]) for s in samples if row[s])
+            count = int(total)
+        except ValueError:
+            # This skips lines that might still be misformatted
             continue
-        tax_levels = taxonomy.get(fid, [fid])
-        out.write(str(count) + "\t" + "\t".join(tax_levels) + "\n")
 
-print(f"KRONA input written to: {out_file}")
+        if count <= 0:
+            continue
+            
+        tax_levels = taxonomy.get(fid, [fid])
+        out.write(f"{count}\t" + "\t".join(tax_levels) + "\n")
+
+print(f"Success! KRONA input written to: {out_file}")

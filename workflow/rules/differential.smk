@@ -16,7 +16,7 @@ rule ancombc:
     Wildcard 'level': 2=Phylum, 6=Genus
     """
     input:
-        table    = f"{_COMP}/{{level}}_table.qza",
+        table    = f"{OUT}/table.qza",
         metadata = config["metadata_file"],
     output:
         differentials = f"{_DIFF}/ancombc_level{{level}}.qza",
@@ -32,6 +32,7 @@ rule ancombc:
             --i-table        '{input.table}' \
             --m-metadata-file '{input.metadata}' \
             --p-formula      '{params.formula}' \
+            --p-reference-levels Group::carries Sex::Female \
             --o-differentials '{output.differentials}' \
             --verbose \
             2>&1 | tee {log}
@@ -91,14 +92,10 @@ rule r_lefse:
     """
     LEfSe (Linear Discriminant Analysis Effect Size) differential analysis.
     Uses R package microbiomeMarker as the backend.
-    Outputs: LDA score barplot + significant taxa table.
-
-    R packages: microbiomeMarker, ggplot2, phyloseq, dplyr
-    Install: mamba install -n qiime2 -c conda-forge -c bioconda r-microbiomemarker
-             (or via BiocManager::install('microbiomeMarker') in R)
     """
     input:
-        genus_tsv = f"{_COMP}/6_relfreq.tsv",
+        # CHANGE: Use the original ASV table (hashes), not the collapsed genus table
+        table_tsv = f"{OUT}/exported/feature_table/feature-table.tsv",
         taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv",
         metadata  = config["metadata_file"],
     output:
@@ -113,7 +110,7 @@ rule r_lefse:
         """
         mkdir -p $(dirname {log})
         Rscript workflow/scripts/lefse_analysis.R \
-            '{input.genus_tsv}' \
+            '{input.table_tsv}' \
             '{input.taxonomy}' \
             '{input.metadata}' \
             '{params.group_col}' \

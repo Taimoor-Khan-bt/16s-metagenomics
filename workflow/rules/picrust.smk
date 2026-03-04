@@ -14,58 +14,49 @@ _PICRUST = f"{OUT}/picrust2"
 
 rule picrust2_pipeline:
     """
-    PICRUSt2 full pipeline:
-      1. Place ASV sequences onto reference tree
-      2. Hidden state prediction for EC + KO gene families
-      3. MetaCyc pathway abundance prediction
-
-    Output files:
-      EC_metagenome/ec_pred_metagenome_unstrat.tsv.gz
-      KO_metagenome/ko_pred_metagenome_unstrat.tsv.gz
-      pathways_out/path_abun_unstrat.tsv.gz
+    PICRUSt2 full pipeline. 
+    Note: Output paths updated to match PICRUSt2's native naming convention.
     """
     input:
         fasta = f"{OUT}/exported/rep_seqs/dna-sequences.fasta",
         biom  = f"{OUT}/exported/feature_table/feature-table.biom",
     output:
+        # PATH UPDATE: PICRUSt2 creates 'EC_metagenome_out' and 'pathways_out'
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv.gz",
-        ec       = f"{_PICRUST}/EC_metagenome/ec_pred_metagenome_unstrat.tsv.gz",
+        ec       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz",
     params:
         out_dir  = _PICRUST,
         picrust_env = config["picrust"]["env"],
-        threads  = config["dada2"]["threads"],
+        # FIX: Ensure threads is at least 1 to avoid joblib error
+        threads  = config["dada2"]["threads"] if config["dada2"]["threads"] > 0 else 1
     log:
         f"{OUT}/logs/picrust2_pipeline.log",
     shell:
         """
         mkdir -p $(dirname {log})
-        # Remove output dir if it exists (PICRUSt2 won't overwrite)
         rm -rf '{params.out_dir}'
-        conda run --no-capture-output -n {params.picrust_env} \
-            picrust2_pipeline.py \
-                --study_fasta   '{input.fasta}' \
-                --input_table   '{input.biom}' \
-                --output        '{params.out_dir}' \
-                --processes     {params.threads} \
-                --verbose \
-            2>&1 | tee {log}
+        
+        mamba run -n {params.picrust_env} bash -c "picrust2_pipeline.py \
+                --study_fasta {input.fasta} \
+                --input {input.biom} \
+                --output {params.out_dir} \
+                --processes {params.threads} \
+                --verbose" 2>&1 | tee {log}
         """
-
 
 rule picrust2_decompress:
     """Decompress PICRUSt2 output TSVs for downstream R analysis."""
     input:
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv.gz",
-        ec       = f"{_PICRUST}/EC_metagenome/ec_pred_metagenome_unstrat.tsv.gz",
+        ec       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz",
     output:
         pathways_tsv = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv",
-        ec_tsv       = f"{_PICRUST}/EC_metagenome/ec_pred_metagenome_unstrat.tsv",
+        ec_tsv       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv",
     shell:
         """
         gunzip -kf '{input.pathways}'
         gunzip -kf '{input.ec}'
         """
-
 
 rule r_picrust2_differential:
     """

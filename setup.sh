@@ -79,17 +79,17 @@ section "2 / 7  Snakemake"
 
 QIIME2_ENV="qiime2"
 
-if conda run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
-  SM_VER=$(conda run -n "$QIIME2_ENV" snakemake --version 2>/dev/null)
+if mamba run -n "$QIIME2_ENV" snakemake --version &>/dev/null 2>&1; then
+  SM_VER=$(mamba run -n "$QIIME2_ENV" snakemake --version 2>/dev/null)
   ok "Snakemake $SM_VER (env: $QIIME2_ENV)"
 else
   warn "Snakemake not found in env '$QIIME2_ENV'. Creating / installing…"
-  if conda env list | grep -q "^${QIIME2_ENV} "; then
+  if mamba env list | grep -q "^${QIIME2_ENV} "; then
     mamba install -n "$QIIME2_ENV" -c conda-forge -c bioconda snakemake -y
   else
     mamba create -n "$QIIME2_ENV" -c conda-forge -c bioconda snakemake python=3.12 -y
   fi
-  ok "Snakemake: $(conda run -n "$QIIME2_ENV" snakemake --version)"
+  ok "Snakemake: $(mamba run -n "$QIIME2_ENV" snakemake --version)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,12 +101,12 @@ if $SKIP_R; then
   warn "Skipping R packages (--skip-r)"
 else
   # Check if R is available in the env
-  if ! conda run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
+  if ! mamba run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
     warn "R not found in env '$QIIME2_ENV'. Installing R…"
     mamba install -n "$QIIME2_ENV" -c conda-forge r-base -y
   fi
 
-  R_VERSION=$(conda run -n "$QIIME2_ENV" Rscript --version 2>&1 | head -1)
+  R_VERSION=$(mamba run -n "$QIIME2_ENV" Rscript --version 2>&1 | head -1)
   ok "R: $R_VERSION"
 
   CRAN_PKGS=(
@@ -124,7 +124,7 @@ else
     ok "microbiomeMarker: installed via conda"
   else
     warn "microbiomeMarker not in conda channels — installing via BiocManager in R…"
-    conda run -n "$QIIME2_ENV" Rscript -e "
+    mamba run -n "$QIIME2_ENV" Rscript -e "
       if (!requireNamespace('BiocManager', quietly=TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')
       if (!requireNamespace('microbiomeMarker', quietly=TRUE)) BiocManager::install('microbiomeMarker', ask=FALSE)
       cat('microbiomeMarker:', as.character(packageVersion('microbiomeMarker')), '\n')
@@ -140,14 +140,14 @@ section "4 / 7  KRONA"
 if $SKIP_KRONA; then
   warn "Skipping KRONA (--skip-krona)"
 else
-  if conda run -n "$QIIME2_ENV" ktImportText --version &>/dev/null 2>&1 || \
-     conda run -n "$QIIME2_ENV" which ktImportText &>/dev/null 2>&1; then
+  if mamba run -n "$QIIME2_ENV" ktImportText --version &>/dev/null 2>&1 || \
+     mamba run -n "$QIIME2_ENV" which ktImportText &>/dev/null 2>&1; then
     ok "KRONA: already installed in env '$QIIME2_ENV'"
   else
     warn "Installing KRONA in env '$QIIME2_ENV'…"
     mamba install -n "$QIIME2_ENV" -c bioconda krona -y
     # Initialize taxonomy database
-    conda run -n "$QIIME2_ENV" ktUpdateTaxonomy.sh 2>/dev/null || true
+    mamba run -n "$QIIME2_ENV" ktUpdateTaxonomy.sh 2>/dev/null || true
     ok "KRONA: installed"
   fi
 fi
@@ -169,8 +169,8 @@ try:
 except: print('picrust2')
 " 2>/dev/null || echo "picrust2")
 
-  if conda env list | grep -q "^${PICRUST_ENV} "; then
-    if conda run -n "$PICRUST_ENV" picrust2_pipeline.py --version &>/dev/null 2>&1; then
+  if mamba env list | grep -q "^${PICRUST_ENV} "; then
+    if mamba run -n "$PICRUST_ENV" picrust2_pipeline.py --version &>/dev/null 2>&1; then
       ok "PICRUSt2: env '$PICRUST_ENV' already exists"
     else
       warn "PICRUSt2 env exists but picrust2 not working — reinstalling…"
@@ -190,7 +190,7 @@ fi
 section "6 / 7  Config validation"
 
 ALL_OK=true
-for f in config/config.yaml config/samples.tsv config/metadata.tsv; do
+for f in config/config_template.yaml config/samples.tsv config/metadata.tsv; do
   if [[ -f "$f" ]]; then
     ok "Found: $f"
   else
@@ -243,7 +243,7 @@ section "7 / 7  Pipeline dry-run"
 
 if $ALL_OK; then
   echo "Running base pipeline dry-run…"
-  if conda run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile 2>&1 | \
+  if mamba run -n "$QIIME2_ENV" snakemake -n --snakefile workflow/Snakefile 2>&1 | \
      grep -E "(Job stats|total|Error)" | tail -5; then
     ok "Base pipeline dry-run PASSED"
   else
@@ -252,7 +252,7 @@ if $ALL_OK; then
 
   echo ""
   echo "Running extended analysis dry-run…"
-  if conda run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile 2>&1 | \
+  if mamba run -n "$QIIME2_ENV" snakemake all_extended -n --snakefile workflow/Snakefile 2>&1 | \
      grep -E "(Job stats|total|Error)" | tail -5; then
     ok "Extended pipeline dry-run PASSED"
   else
@@ -268,12 +268,15 @@ fi
 echo ""
 echo "============================================================"
 echo -e "${GREEN}  Setup complete!${NC}"
+
 echo ""
 echo "  Activate env:   mamba activate $QIIME2_ENV"
+
 echo ""
 echo "  Base pipeline:  snakemake --cores all --snakefile workflow/Snakefile"
 echo "  Full analysis:  snakemake all_extended --cores all --snakefile workflow/Snakefile"
 echo "  Dry-run:        snakemake -n --snakefile workflow/Snakefile"
+
 echo ""
 echo "  Flags:"
 echo "    --skip-r         skip R packages"

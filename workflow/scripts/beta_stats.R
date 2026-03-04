@@ -1,13 +1,6 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# beta_stats.R — Beta diversity: CLR-PCoA + PERMANOVA with covariates
-# =============================================================================
-# Usage: Rscript beta_stats.R <table_tsv> <metadata_tsv> <bray_dm_tsv>
-#                             <wunifrac_dm_tsv> <group_col> <covariates_csv>
-#                             <out_dir>
-#
-# Required: vegan, ggplot2, compositions, ape, dplyr
-# Install:  mamba install -n qiime2 -c conda-forge r-vegan r-ggplot2 r-compositions r-ape r-dplyr
+# beta_stats.R — Robust Beta diversity: CLR-PCoA + PERMANOVA
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -17,83 +10,73 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
-# ── Try to load compositions for CLR (optional) ───────────────────────────────
-has_compositions <- requireNamespace("compositions", quietly = TRUE)
-
 # ── Arguments ─────────────────────────────────────────────────────────────────
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 7) stop("Usage: beta_stats.R <table_tsv> <metadata> <bray_dm> <wunifrac_dm> <group_col> <covariates_csv> <out_dir>")
 
-table_tsv    <- args[1]
+table_tsv     <- args[1]
 metadata_file <- args[2]
-bray_file    <- args[3]
+bray_file     <- args[3]
 wunifrac_file <- args[4]
-group_col    <- args[5]
-covariates   <- if (nchar(args[6]) > 0) strsplit(args[6], ",")[[1]] else character(0)
-out_dir      <- args[7]
+group_col     <- args[5]
+covariates    <- if (nchar(args[6]) > 0) strsplit(args[6], ",")[[1]] else character(0)
+out_dir       <- args[7]
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-# ── Load data ─────────────────────────────────────────────────────────────────
+# ── Load data (Defensive Loading) ─────────────────────────────────────────────
 meta <- read.table(metadata_file, header = TRUE, sep = "\t",
-                   comment.char = "", row.names = 1, check.names = FALSE)
+                   comment.char = "", row.names = 1, check.names = FALSE, quote = "")
 
-# Feature table (skip biom comment lines starting with #)
 raw_tab <- read.table(table_tsv, header = TRUE, sep = "\t",
-                      skip = 1, row.names = 1, check.names = FALSE)
-# Transpose: samples as rows
-tab <- t(raw_tab)
+                      skip = 1, row.names = 1, check.names = FALSE, 
+                      comment.char = "", quote = "")
+tab <- t(raw_tab) 
 
-# Keep only samples present in both metadata and feature table
 common_samples <- intersect(rownames(meta), rownames(tab))
-if (length(common_samples) < 2) stop("Fewer than 2 common samples between table and metadata.")
+if (length(common_samples) < 2) {
+    stop("Fewer than 2 common samples. Verify Sample IDs match exactly.")
+}
+
 meta <- meta[common_samples, , drop = FALSE]
 tab  <- tab[common_samples, , drop = FALSE]
 
-# ── CLR transformation for Aitchison PCoA ────────────────────────────────────
-clr_tab <- NULL
-if (has_compositions) {
-  library(compositions)
-  # Replace zeros with small pseudocount before CLR
-  tab_pseudo <- tab + 0.5
-  clr_tab <- as.matrix(compositions::clr(tab_pseudo))
-  message("CLR transformation applied (compositions package)")
-} else {
-  # Fallback: manual CLR
-  tab_pseudo <- tab + 0.5
-  gm <- apply(tab_pseudo, 1, function(x) exp(mean(log(x))))
-  clr_tab <- log(tab_pseudo / gm)
-  message("CLR transformation applied (manual fallback)")
+# ── Helper for Distance Matrices ──────────────────────────────────────────────
+load_dm <- function(f, samples) {
+  if (!file.exists(f)) return(NULL)
+  dm <- read.table(f, header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
+  common_dm <- intersect(samples, rownames(dm))
+  if (length(common_dm) < 2) return(NULL)
+  as.dist(dm[common_dm, common_dm])
 }
 
-# ── Aitchison distance (Euclidean on CLR) PCoA ───────────────────────────────
+# ── CLR Transformation & Aitchison PCoA ──────────────────────────────────────
+tab_pseudo <- tab + 0.5
+gm <- apply(tab_pseudo, 1, function(x) exp(mean(log(x))))
+clr_tab <- log(tab_pseudo / gm)
+
 ait_dist <- dist(clr_tab)
 pcoa_ait <- pcoa(ait_dist)
 pcoa_df  <- as.data.frame(pcoa_ait$vectors[, 1:2])
 colnames(pcoa_df) <- c("PC1", "PC2")
-pcoa_df  <- merge(pcoa_df, meta, by = "row.names", all.x = TRUE)
-colnames(pcoa_df)[1] <- "SampleID"
+pcoa_df$SampleID <- rownames(pcoa_df)
+pcoa_df  <- merge(pcoa_df, tibble::rownames_to_column(meta, "SampleID"), by = "SampleID")
 
 pct_var <- round(pcoa_ait$values$Relative_eig[1:2] * 100, 1)
 
-# ── PERMANOVA (adonis2) using distance matrices ───────────────────────────────
-load_dm <- function(f) {
-  dm <- read.table(f, header = TRUE, sep = "\t", row.names = 1, check.names = FALSE)
-  dm <- dm[common_samples, common_samples]
-  as.dist(dm)
-}
-
+# ── PERMANOVA (adonis2) ───────────────────────────────────────────────────────
 permanova_results <- list()
 
-run_permanova <- function(dist_obj, label) {
-  all_terms <- c(group_col, covariates[covariates %in% colnames(meta)])
+run_permanova <- function(dist_obj, label, metadata) {
+  valid_covs <- covariates[covariates %in% colnames(metadata)]
+  all_terms <- c(group_col, valid_covs)
   formula_str <- paste("dist_obj ~", paste(all_terms, collapse = " + "))
+  
   tryCatch({
-    perm <- adonis2(as.formula(formula_str), data = meta, permutations = 999)
+    perm <- adonis2(as.formula(formula_str), data = metadata, permutations = 999)
     perm_df <- as.data.frame(perm)
     perm_df$term   <- rownames(perm_df)
     perm_df$metric <- label
-    message(label, " PERMANOVA:\n", paste(capture.output(perm), collapse = "\n"))
     perm_df
   }, error = function(e) {
     message("PERMANOVA failed for ", label, ": ", e$message)
@@ -101,71 +84,63 @@ run_permanova <- function(dist_obj, label) {
   })
 }
 
-if (file.exists(bray_file)) {
-  bray_dist <- load_dm(bray_file)
-  permanova_results[["Bray-Curtis"]] <- run_permanova(bray_dist, "Bray-Curtis")
-}
-if (file.exists(wunifrac_file)) {
-  wu_dist <- load_dm(wunifrac_file)
-  permanova_results[["Weighted-UniFrac"]] <- run_permanova(wu_dist, "Weighted-UniFrac")
+permanova_results[["Aitchison"]] <- run_permanova(ait_dist, "Aitchison", meta)
+
+bray_dist <- load_dm(bray_file, common_samples)
+if (!is.null(bray_dist)) {
+  permanova_results[["Bray-Curtis"]] <- run_permanova(bray_dist, "Bray-Curtis", meta)
 }
 
+wu_dist <- load_dm(wunifrac_file, common_samples)
+if (!is.null(wu_dist)) {
+  permanova_results[["Weighted-UniFrac"]] <- run_permanova(wu_dist, "Weighted-UniFrac", meta)
+}
+
+# ── FIXED: Combine and Save Stats ─────────────────────────────────────────────
+# We actually need to create the perm_df_all variable from the list
 perm_df_all <- do.call(rbind, Filter(Negate(is.null), permanova_results))
+
 if (!is.null(perm_df_all) && nrow(perm_df_all) > 0) {
   write.table(perm_df_all, file.path(out_dir, "permanova_results.tsv"),
               sep = "\t", quote = FALSE, row.names = FALSE)
   message("Saved: permanova_results.tsv")
 } else {
-  # Create empty file so Snakemake target is satisfied
-  write.table(data.frame(), file.path(out_dir, "permanova_results.tsv"),
+  write.table(data.frame(Status="No_Results"), file.path(out_dir, "permanova_results.tsv"),
               sep = "\t", quote = FALSE, row.names = FALSE)
 }
 
-# ── PCoA plots ────────────────────────────────────────────────────────────────
-pdf(file.path(out_dir, "pcoa_plots.pdf"), width = 9, height = 7)
+# ── Plotting ──────────────────────────────────────────────────────────────────
+pdf(file.path(out_dir, "pcoa_plots.pdf"), width = 10, height = 8)
 
-# Aitchison (CLR) PCoA
-if (nrow(pcoa_df) >= 2) {
-  p_ait <- ggplot(pcoa_df, aes_string(x = "PC1", y = "PC2",
-                                       color = group_col, label = "SampleID")) +
-    geom_point(size = 4, alpha = 0.85) +
-    ggrepel_labels(pcoa_df) +
-    xlab(paste0("PC1 (", pct_var[1], "%)")) +
-    ylab(paste0("PC2 (", pct_var[2], "%)")) +
-    stat_ellipse(aes_string(group = group_col), type = "t", level = 0.8, linetype = 2) +
-    theme_bw(base_size = 13) +
-    theme(legend.position = "right") +
-    labs(title = paste("Aitchison PCoA (CLR) by", group_col),
-         subtitle = "Ellipses: 80% confidence interval")
-  print(p_ait)
+p_ait <- ggplot(pcoa_df, aes(x = PC1, y = PC2, color = !!sym(group_col))) +
+  geom_point(size = 4, alpha = 0.7) +
+  stat_ellipse(level = 0.8, linetype = 2) +
+  theme_bw() +
+  labs(title = "Aitchison PCoA (CLR-Euclidean)",
+       x = paste0("PC1 (", pct_var[1], "%)"),
+       y = paste0("PC2 (", pct_var[2], "%)"))
+
+if (requireNamespace("ggrepel", quietly = TRUE)) {
+  p_ait <- p_ait + ggrepel::geom_text_repel(aes(label = SampleID), size = 2, max.overlaps = 10)
 }
+print(p_ait)
 
-# Bray-Curtis PCoA (from distance matrix)
-if (file.exists(bray_file)) {
-  bray_pcoa <- pcoa(load_dm(bray_file))
-  bc_df <- as.data.frame(bray_pcoa$vectors[, 1:2])
+if (!is.null(bray_dist)) {
+  bc_pcoa <- pcoa(bray_dist)
+  bc_df <- as.data.frame(bc_pcoa$vectors[, 1:2])
   colnames(bc_df) <- c("PC1", "PC2")
-  bc_df <- merge(bc_df, meta, by = "row.names", all.x = TRUE)
-  bc_pct <- round(bray_pcoa$values$Relative_eig[1:2] * 100, 1)
-
-  p_bc <- ggplot(bc_df, aes_string(x = "PC1", y = "PC2", color = group_col)) +
-    geom_point(size = 4, alpha = 0.85) +
-    xlab(paste0("PC1 (", bc_pct[1], "%)")) +
-    ylab(paste0("PC2 (", bc_pct[2], "%)")) +
-    stat_ellipse(aes_string(group = group_col), type = "t", level = 0.8, linetype = 2) +
-    theme_bw(base_size = 13) +
-    labs(title = paste("Bray-Curtis PCoA by", group_col))
+  bc_df$SampleID <- rownames(bc_df)
+  bc_df <- merge(bc_df, tibble::rownames_to_column(meta, "SampleID"), by = "SampleID")
+  bc_pct <- round(bc_pcoa$values$Relative_eig[1:2] * 100, 1)
+  
+  p_bc <- ggplot(bc_df, aes(x = PC1, y = PC2, color = !!sym(group_col))) +
+    geom_point(size = 4, alpha = 0.7) +
+    stat_ellipse(level = 0.8, linetype = 2) +
+    theme_bw() +
+    labs(title = "Bray-Curtis PCoA",
+         x = paste0("PC1 (", bc_pct[1], "%)"),
+         y = paste0("PC2 (", bc_pct[2], "%)"))
   print(p_bc)
 }
 
 dev.off()
-message("Saved: pcoa_plots.pdf")
-
-# ── Helper: ggrepel labels if available ──────────────────────────────────────
-ggrepel_labels <- function(df) {
-  if (requireNamespace("ggrepel", quietly = TRUE)) {
-    ggrepel::geom_text_repel(size = 3, max.overlaps = Inf)
-  } else {
-    geom_text(size = 3, vjust = -0.8)
-  }
-}

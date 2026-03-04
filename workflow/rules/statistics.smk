@@ -205,12 +205,10 @@ rule r_core_microbiome:
     """
     R: Chi-square / Fisher exact test comparing core taxa between groups.
     Outputs: TSV stats table + Venn/UpSet plot PDF.
-
-    R packages: ggplot2, dplyr, UpSetR or VennDiagram
-    Install: mamba install -n qiime2 -c conda-forge r-upsetr r-dplyr r-ggplot2
     """
     input:
         table_tsv = f"{OUT}/exported/feature_table/feature-table.tsv",
+        taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv", # Add this line
         metadata  = config["metadata_file"],
     output:
         stats = f"{_CORE}/core_stats.tsv",
@@ -226,6 +224,7 @@ rule r_core_microbiome:
         mkdir -p $(dirname {log})
         Rscript workflow/scripts/core_microbiome.R \
             '{input.table_tsv}' \
+            '{input.taxonomy}' \
             '{input.metadata}' \
             '{params.group_col}' \
             '{params.prevalence}' \

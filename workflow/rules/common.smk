@@ -1,26 +1,26 @@
-# =============================================================================
-# rules/common.smk — Shared helpers and Docker configuration
-# =============================================================================
+# workflow/rules/common.smk
 
 import os
+import subprocess
 
-# ── Resolved paths (evaluated once at parse time) ─────────────────────────────
-WDIR = os.path.abspath(".")          # absolute project root (quoted in docker)
-HOME = os.path.expanduser("~")       # user home, mounted at same path
-IMG  = config["docker"]["image"]     # e.g. quay.io/qiime2/amplicon:2024.10
+# Get IDs
+UID = subprocess.check_output(["id", "-u"]).decode().strip()
+GID = subprocess.check_output(["id", "-g"]).decode().strip()
 
-# ── Docker run prefix ──────────────────────────────────────────────────────────
-# Mounted paths must be absolute so they work identically inside the container.
-# --user preserves file ownership; --volume mounts home + tmp.
-# Quoting WDIR handles paths with spaces (e.g. "16s metagenomics").
+WDIR = os.path.abspath(".")
+HOME = os.path.expanduser("~")
+IMG  = config["docker"]["image"]
+
+# THE NEW STRATEGY: 
+# 1. We mount the project folder (WDIR) and HOME.
+# 2. We do NOT mount the host's /tmp to the container's /tmp.
+# 3. We let Docker create a fresh internal /tmp for every run.
 DOCKER = (
     f'docker run --rm '
-    f'--user "$(id -u):$(id -g)" '
+    f'--user {UID}:{GID} ' 
     f'--volume "{HOME}:{HOME}" '
-    f'--volume "/tmp:/tmp" '
     f'--workdir "{WDIR}" '
     f'"{IMG}"'
 )
 
-# ── Output root (shortcut used in all rule files) ──────────────────────────────
 OUT = config["output_dir"]

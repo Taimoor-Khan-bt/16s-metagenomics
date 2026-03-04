@@ -91,16 +91,18 @@ def main():
             missing.append(sid)
 
     # 4. Write samples.tsv
-    with open(out_sheet, "w") as f:
-        f.write("# =============================================================================\n")
-        f.write(f"# Auto-generated Paired-End sample sheet from {fastq_dir}\n")
-        f.write("# =============================================================================\n")
-        f.write("sample_id\tr1\tr2\n")
+    with open(out_sheet, "w", newline='') as f:
+        # Use a single '#' for comments to help Bash 'read' skip them easily
+        f.write("# Auto-generated sample sheet\n")
+        f.write("# sample_id\tr1\tr2\n") # Commented header for safety
+        
+        writer = csv.writer(f, delimiter='\t')
+        # Write the actual header line (no #)
+        writer.writerow(["sample_id", "r1", "r2"])
+        
         for sid in sample_ids:
             if sid in matches:
-                r1 = matches[sid]["r1"]
-                r2 = matches[sid]["r2"]
-                f.write(f"{sid}\t{r1}\t{r2}\n")
+                writer.writerow([sid, matches[sid]["r1"], matches[sid]["r2"]])
 
     print(f"\nSuccessfully wrote {len(matches)} matches to {out_sheet}")
     if missing:

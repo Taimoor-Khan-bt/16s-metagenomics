@@ -39,21 +39,21 @@ diversity:
 
 # ── Metadata ──────────────────────────────────────────────────────────────────
 metadata:
-  group_column: "Stunting"   # column for alpha/beta group significance tests
+  group_column: "Group"   # column for alpha/beta group significance tests
                              # must have ≥2 samples per category
 
 # ── Extended analysis strategy ───────────────────────────────────────────────
 analysis:
-  group_column: "Stunting"           # primary comparison variable
+  group_column: "Group"           # primary comparison variable
   
   # ── Confounders / Covariates ───────────────────────────────────────────────
   # These variables are included in the GLM (Alpha diversity) and 
   # PERMANOVA / adonis2 (Beta diversity) models to adjust for confounding.
   # Ensure these exact names match your metadata column headers!
   covariates:
-    - "Agemons"             # Age
+    - "Age"             # Age
     - "Sex"                 # Gender
-    - "Caries_Severity"     # DMFT Category (or use DMFT_Score)
+    # - "Caries_Severity"     # DMFT Category (or use DMFT_Score)
     # - "Toothbrush_Use"    # Add this column to your metadata first!
   
   # Taxonomy levels: 2=Phylum, 3=Class, 6=Genus (SILVA)
@@ -67,7 +67,7 @@ analysis:
     
   # Formula passed to ANCOM-BC for differential abundance testing.
   # The formula MUST include your primary group_column plus confounders.
-  ancombc_formula: "Stunting + Agemons + Sex + Caries_Severity"
+  ancombc_formula: "Stunting + Sex + Age"
   
   core_prevalence: 0.5                            # fraction of samples to define core
 
