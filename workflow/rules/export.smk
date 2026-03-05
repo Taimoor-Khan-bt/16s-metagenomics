@@ -152,3 +152,38 @@ rule export_alpha_diversity:
             --output-path '{params.out_dir}' \
             2>&1 | tee {log}
         """
+
+
+# ── Filtered feature table (used by diversity, composition, differential) ─────
+
+rule export_filtered_feature_table:
+    """
+    Export table_filtered.qza (mitochondria/chloroplast/unassigned removed).
+    Downstream R rules and composition rules consume this path.
+    The original exported/feature_table/ is kept for raw QC reference.
+    """
+    input:
+        table = f"{OUT}/table_filtered.qza",
+    output:
+        biom = f"{_EXP}/feature_table_filtered/feature-table.biom",
+        tsv  = f"{_EXP}/feature_table_filtered/feature-table.tsv",
+    params:
+        docker  = DOCKER,
+        out_dir = f"{_EXP}/feature_table_filtered",
+    log:
+        f"{OUT}/logs/export_filtered_feature_table.log",
+    shell:
+        """
+        mkdir -p $(dirname {log})
+        # Export BIOM artifact
+        {params.docker} qiime tools export \
+            --input-path  '{input.table}' \
+            --output-path '{params.out_dir}' \
+            2>&1 | tee {log}
+        # Convert BIOM → TSV
+        {params.docker} biom convert \
+            -i '{output.biom}' \
+            -o '{output.tsv}' \
+            --to-tsv \
+            2>&1 | tee -a {log}
+        """

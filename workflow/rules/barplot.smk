@@ -8,18 +8,18 @@ rule taxa_barplot:
     taxonomic levels (Domain → Species). Upload the QZV to view.qiime2.org.
     """
     input:
-        table    = f"{OUT}/table.qza",
+        table    = f"{OUT}/table_filtered.qza",  # mito/chloro/unassigned removed
         taxonomy = f"{OUT}/taxonomy.qza",
         metadata = config["metadata_file"],
     output:
-        viz = f"{OUT}/taxa_barplot.qzv",
+        viz = f"{OUT_VIZ}/taxonomy/taxa_barplot.qzv",
     params:
         docker = DOCKER,
     log:
         f"{OUT}/logs/taxa_barplot.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime taxa barplot \
             --i-table             '{input.table}' \
             --i-taxonomy          '{input.taxonomy}' \

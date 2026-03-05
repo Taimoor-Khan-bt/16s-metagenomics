@@ -19,7 +19,7 @@ rule alpha_group_significance:
         vector   = f"{_CDIV}/{{metric}}_vector.qza",
         metadata = config["metadata_file"],
     output:
-        viz = f"{_STATS}/alpha/{{metric}}_group_significance.qzv",
+        viz = f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
     params:
         docker    = DOCKER,
         group_col = config["analysis"]["group_column"],
@@ -27,7 +27,7 @@ rule alpha_group_significance:
         f"{OUT}/logs/alpha_group_sig_{{metric}}.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime diversity alpha-group-significance \
             --i-alpha-diversity '{input.vector}' \
             --m-metadata-file   '{input.metadata}' \
@@ -51,7 +51,7 @@ rule beta_group_significance:
         distance = f"{_CDIV}/{{beta_metric}}_distance_matrix.qza",
         metadata = config["metadata_file"],
     output:
-        viz = f"{_STATS}/beta/{{beta_metric}}_permanova.qzv",
+        viz = f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
     params:
         docker    = DOCKER,
         group_col = config["analysis"]["group_column"],
@@ -59,7 +59,7 @@ rule beta_group_significance:
         f"{OUT}/logs/beta_permanova_{{beta_metric}}.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime diversity beta-group-significance \
             --i-distance-matrix     '{input.distance}' \
             --m-metadata-file       '{input.metadata}' \
@@ -115,17 +115,18 @@ rule r_alpha_stats:
         metadata  = config["metadata_file"],
     output:
         stats = f"{_STATS}/alpha/alpha_statistics.tsv",
-        plots = f"{_STATS}/alpha/alpha_plots.pdf",
+        plots = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
         alpha_dir  = f"{OUT}/exported/alpha_diversity",
         out_dir    = f"{_STATS}/alpha",
+        viz_dir    = f"{OUT_VIZ}/diversity",
     log:
         f"{OUT}/logs/r_alpha_stats.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/alpha_stats.R \
             '{input.metadata}' \
             '{params.alpha_dir}' \
@@ -133,6 +134,7 @@ rule r_alpha_stats:
             '{params.covariates}' \
             '{params.out_dir}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/alpha_plots.pdf' '{output.plots}'
         """
 
 
@@ -146,22 +148,23 @@ rule r_beta_stats:
     Install: mamba install -n qiime2 -c conda-forge r-vegan r-ggplot2 r-compositions r-ape r-dplyr
     """
     input:
-        table_tsv = f"{OUT}/exported/feature_table/feature-table.tsv",
+        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",  # filtered
         metadata  = config["metadata_file"],
         bray_dm   = f"{_STATS}/beta/bray_curtis_distance_matrix.tsv",
         wunifrac_dm = f"{_STATS}/beta/weighted_unifrac_distance_matrix.tsv",
     output:
         permanova = f"{_STATS}/beta/permanova_results.tsv",
-        plots     = f"{_STATS}/beta/pcoa_plots.pdf",
+        plots     = f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
         out_dir    = f"{_STATS}/beta",
+        viz_dir    = f"{OUT_VIZ}/diversity",
     log:
         f"{OUT}/logs/r_beta_stats.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/beta_stats.R \
             '{input.table_tsv}' \
             '{input.metadata}' \
@@ -171,6 +174,7 @@ rule r_beta_stats:
             '{params.covariates}' \
             '{params.out_dir}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/pcoa_plots.pdf' '{output.plots}'
         """
 
 
@@ -184,7 +188,7 @@ rule core_features:
     input:
         table = f"{OUT}/table.qza",
     output:
-        viz = f"{_CORE}/core_features.qzv",
+        viz = f"{OUT_VIZ}/core_microbiome/core_features.qzv",
     params:
         docker     = DOCKER,
         prevalence = config["analysis"]["core_prevalence"],
@@ -192,7 +196,7 @@ rule core_features:
         f"{OUT}/logs/core_features.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime feature-table core-features \
             --i-table                        '{input.table}' \
             --p-min-fraction                 {params.prevalence} \
@@ -207,21 +211,22 @@ rule r_core_microbiome:
     Outputs: TSV stats table + Venn/UpSet plot PDF.
     """
     input:
-        table_tsv = f"{OUT}/exported/feature_table/feature-table.tsv",
-        taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv", # Add this line
+        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",  # filtered
+        taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv",
         metadata  = config["metadata_file"],
     output:
         stats = f"{_CORE}/core_stats.tsv",
-        plots = f"{_CORE}/core_plots.pdf",
+        plots = f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
     params:
         group_col  = config["analysis"]["group_column"],
         prevalence = config["analysis"]["core_prevalence"],
         out_dir    = _CORE,
+        viz_dir    = f"{OUT_VIZ}/core_microbiome",
     log:
         f"{OUT}/logs/r_core_microbiome.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/core_microbiome.R \
             '{input.table_tsv}' \
             '{input.taxonomy}' \
@@ -230,4 +235,5 @@ rule r_core_microbiome:
             '{params.prevalence}' \
             '{params.out_dir}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/core_plots.pdf' '{output.plots}'
         """

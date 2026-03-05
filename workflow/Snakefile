@@ -56,7 +56,31 @@ include: "rules/statistics.smk"
 include: "rules/differential.smk"
 include: "rules/picrust.smk"
 
-# ── Target rule: base pipeline outputs ───────────────────────────────────────
+# ── Post-include variables (require OUT_VIZ defined in common.smk) ───────────
+# Taxa processing config — drives filter_taxa rule and dual-plot inclusion
+_TAXA_PROC = config.get("taxa_processing", {})
+_DUAL_PLOT_OUTPUTS = (
+    [
+        f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
+        f"{OUT_VIZ}/differential/lefse_plots_raw.pdf",
+        f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
+    ]
+    if _TAXA_PROC.get("generate_dual_plots", False)
+    else []
+)
+
+# Krona HTML targets for all_extended
+_KRONA_CFG       = config.get("krona", {})
+_KRONA_LEVELS_SF = _KRONA_CFG.get("levels", ["2", "3", "6"])
+_KRONA_NAMES_SF  = {"2": "phylum", "3": "class", "4": "order",
+                    "5": "family", "6": "genus", "7": "species"}
+_KRONA_HTMLS     = (
+    [f"{OUT_VIZ}/composition/krona/krona_all_samples.html"] +
+    [f"{OUT_VIZ}/composition/krona/krona_level{l}_{_KRONA_NAMES_SF.get(l, l)}.html"
+     for l in _KRONA_LEVELS_SF]
+)
+
+
 rule all:
     input:
         # ── Core QIIME 2 artifacts ─────────────────────────────────────────
@@ -66,13 +90,13 @@ rule all:
         f"{OUT}/dada2_stats.qza",
         f"{OUT}/taxonomy.qza",
         f"{OUT}/rooted_tree.qza",
-        # ── Summary visualizations ─────────────────────────────────────────
-        f"{OUT}/dada2_stats.qzv",
-        f"{OUT}/table_summary.qzv",
-        f"{OUT}/rep_seqs.qzv",
-        f"{OUT}/taxa_barplot.qzv",
-        # ── Diversity QZVs ─────────────────────────────────────────────────
-        expand(f"{OUT}/core_diversity/{{metric}}_correlation.qzv",
+        # ── Summary visualizations (→ visualizations/qc/ and taxonomy/) ────
+        f"{OUT_VIZ}/qc/dada2_stats.qzv",
+        f"{OUT_VIZ}/qc/table_summary.qzv",
+        f"{OUT_VIZ}/qc/rep_seqs.qzv",
+        f"{OUT_VIZ}/taxonomy/taxa_barplot.qzv",
+        # ── Diversity QZVs (→ visualizations/diversity/) ───────────────────
+        expand(f"{OUT_VIZ}/diversity/{{metric}}_correlation.qzv",
                metric=ALPHA_METRICS),
         # ── Exported flat files ────────────────────────────────────────────
         f"{OUT}/exported/feature_table/feature-table.tsv",
@@ -82,7 +106,9 @@ rule all:
         f"{OUT}/exported/dada2_stats/stats.tsv",
         expand(f"{OUT}/exported/alpha_diversity/{{metric}}/alpha-diversity.tsv",
                metric=ALPHA_METRICS),
-
+        # ── Filtered feature table (no mito/chloro/unassigned) ───────────────────
+        f"{OUT}/table_filtered.qza",
+        f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
 # ── Target rule: full extended analysis (A–G) ─────────────────────────────────
 # Run with: snakemake all_extended --cores all --snakefile workflow/Snakefile
 rule all_extended:
@@ -91,31 +117,32 @@ rule all_extended:
         rules.all.input,
         # ─ A: Alpha diversity statistics ──────────────────────────────────
         f"{OUT}/stats/alpha/alpha_statistics.tsv",
-        f"{OUT}/stats/alpha/alpha_plots.pdf",
-        expand(f"{OUT}/stats/alpha/{{metric}}_group_significance.qzv",
+        f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
                metric=ALPHA_METRICS),
         # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────
-        expand(f"{OUT}/stats/beta/{{beta_metric}}_permanova.qzv",
+        expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
                beta_metric=BETA_METRICS),
         expand(f"{OUT}/stats/beta/{{beta_metric}}_distance_matrix.tsv",
                beta_metric=["bray_curtis", "weighted_unifrac"]),
         f"{OUT}/stats/beta/permanova_results.tsv",
-        f"{OUT}/stats/beta/pcoa_plots.pdf",
+        f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
         # ─ C: Composition analysis ─────────────────────────────────────────
         expand(f"{OUT}/composition/{{level}}_relfreq.tsv", level=COLLAPSE_LEVELS),
-        expand(f"{OUT}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),
-        f"{OUT}/composition/composition_plots.pdf",
-        f"{OUT}/composition/krona.html",
+        expand(f"{OUT_VIZ}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),
+        f"{OUT_VIZ}/composition/composition_plots.pdf",
+        *_KRONA_HTMLS,
         # ─ D: Differential abundance ──────────────────────────────────────
-        expand(f"{OUT}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
+        expand(f"{OUT_VIZ}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
         expand(f"{OUT}/differential/ancombc_level{{level}}.tsv", level=ANCOMBC_LEVELS),
         f"{OUT}/differential/lefse_results.tsv",
-        f"{OUT}/differential/lefse_plots.pdf",
+        f"{OUT_VIZ}/differential/lefse_plots.pdf",
         # ─ E: Core microbiome ─────────────────────────────────────────────
-        f"{OUT}/core_microbiome/core_features.qzv",
+        f"{OUT_VIZ}/core_microbiome/core_features.qzv",
         f"{OUT}/core_microbiome/core_stats.tsv",
-        f"{OUT}/core_microbiome/core_plots.pdf",
+        f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
         # ─ G: PICRUSt2 functional prediction ─────────────────────────────
         f"{OUT}/picrust2/pathway_differential.tsv",
-        f"{OUT}/picrust2/pathway_plots.pdf",
-
+        f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        # ─ Dual raw-label PDFs (only when taxa_processing.generate_dual_plots: true)
+        *_DUAL_PLOT_OUTPUTS,

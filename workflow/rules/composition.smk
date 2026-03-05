@@ -5,6 +5,12 @@
 
 _COMP = f"{OUT}/composition"
 
+# ── Krona directory + level config ──────────────────────────────────────────
+_KRONA_VIZ         = f"{OUT_VIZ}/composition/krona"
+_KRONA_LEVEL_NAMES = {"2": "phylum", "3": "class", "4": "order",
+                      "5": "family", "6": "genus", "7": "species"}
+_KRONA_LEVELS      = config.get("krona", {}).get("levels", ["2", "3", "6"])
+
 # ── Taxonomy collapse at phylum / class / genus ───────────────────────────────
 
 rule collapse_taxonomy:
@@ -13,7 +19,7 @@ rule collapse_taxonomy:
     SILVA levels: 2=Phylum, 3=Class, 4=Order, 5=Family, 6=Genus, 7=Species
     """
     input:
-        table    = f"{OUT}/table.qza",
+        table    = f"{OUT}/table_filtered.qza",  # mito/chloro/unassigned removed
         taxonomy = f"{OUT}/taxonomy.qza",
     output:
         collapsed = f"{_COMP}/{{level}}_table.qza",
@@ -87,18 +93,18 @@ rule export_relfreq:
 rule viz_taxa_barplot_level:
     """QIIME 2 taxa barplot forced to a specific level (for QZV download)."""
     input:
-        table    = f"{OUT}/table.qza",
+        table    = f"{OUT}/table_filtered.qza",  # mito/chloro/unassigned removed
         taxonomy = f"{OUT}/taxonomy.qza",
         metadata = config["metadata_file"],
     output:
-        viz = f"{_COMP}/{{level}}_barplot.qzv",
+        viz = f"{OUT_VIZ}/composition/{{level}}_barplot.qzv",
     params:
         docker = DOCKER,
     log:
         f"{OUT}/logs/taxa_barplot_{{level}}.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime taxa barplot \
             --i-table         '{input.table}' \
             --i-taxonomy      '{input.taxonomy}' \
@@ -108,34 +114,52 @@ rule viz_taxa_barplot_level:
         """
 
 
-# ── F: KRONA interactive plot ─────────────────────────────────────────────────
+# ── F: KRONA interactive plots ────────────────────────────────────────────────
 
-rule krona_plot:
+rule krona_multisample:
     """
-    Generate a KRONA interactive HTML plot from taxonomy + feature table.
-    Requires: mamba install -n qiime2 -c bioconda krona
+    Multi-level, per-sample annotated Krona HTML plots (via build_krona.py).
+    Produces one merged HTML (all samples) + one per collapsed taxonomy level.
+    LEfSe LDA scores and alpha diversity are overlaid when available.
+    Requires: mamba install -n qiime2 -c bioconda krona && ktUpdateTaxonomy.sh
     """
     input:
-        taxonomy_tsv = f"{OUT}/exported/taxonomy/taxonomy.tsv",
-        table_tsv    = f"{OUT}/exported/feature_table/feature-table.tsv",
+        taxonomy_tsv   = f"{OUT}/exported/taxonomy/taxonomy.tsv",
+        table_tsv      = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
+        collapse_tsvs  = expand(f"{_COMP}/{{level}}_relfreq.tsv", level=_KRONA_LEVELS),
+        alpha_shannon  = f"{OUT}/exported/alpha_diversity/shannon/alpha-diversity.tsv",
+        alpha_obs_feat = f"{OUT}/exported/alpha_diversity/observed_features/alpha-diversity.tsv",
     output:
-        html = f"{_COMP}/krona.html",
+        all_samples = f"{_KRONA_VIZ}/krona_all_samples.html",
+        level_htmls = [f"{_KRONA_VIZ}/krona_level{l}_{_KRONA_LEVEL_NAMES.get(l, l)}.html"
+                       for l in _KRONA_LEVELS],
     params:
-        out_dir = _COMP,
+        out_dir       = _KRONA_VIZ,
+        alpha_dir     = f"{OUT}/exported/alpha_diversity",
+        lefse_tsv     = f"{OUT}/differential/lefse_results.tsv",
+        krona_env     = config.get("krona", {}).get("krona_env", ""),
+        per_sample    = "--per-sample" if config.get("krona", {}).get("per_sample", True) else "",
+        metadata_file = config["metadata_file"],
+        collapse_args = " ".join(
+            [f"--collapse {l}:{_KRONA_LEVEL_NAMES.get(l, l)}:{_COMP}/{l}_relfreq.tsv"
+             for l in _KRONA_LEVELS]
+        ),
     log:
-        f"{OUT}/logs/krona.log",
+        f"{OUT}/logs/krona_multisample.log",
     shell:
         """
-        mkdir -p $(dirname {log}) {params.out_dir}
-        python3 workflow/scripts/make_krona_input.py \
-            '{input.taxonomy_tsv}' \
-            '{input.table_tsv}' \
-            '{params.out_dir}/krona_input.txt' \
+        mkdir -p $(dirname {log}) '{params.out_dir}'
+        python3 workflow/scripts/build_krona.py \
+            --taxonomy   '{input.taxonomy_tsv}' \
+            --table      '{input.table_tsv}' \
+            --metadata   '{params.metadata_file}' \
+            --alpha-dir  '{params.alpha_dir}' \
+            --lefse      '{params.lefse_tsv}' \
+            --out-dir    '{params.out_dir}' \
+            --krona-env  '{params.krona_env}' \
+            {params.per_sample} \
+            {params.collapse_args} \
             2>&1 | tee {log}
-        ktImportText \
-            -o '{output.html}' \
-            '{params.out_dir}/krona_input.txt' \
-            2>&1 | tee -a {log}
         """
 
 
@@ -153,21 +177,29 @@ rule r_composition_plots:
         genus_tsv  = f"{_COMP}/6_relfreq.tsv",
         metadata   = config["metadata_file"],
     output:
-        plots = f"{_COMP}/composition_plots.pdf",
+        plots     = f"{OUT_VIZ}/composition/composition_plots.pdf",
+        plots_raw = f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
     params:
         group_col  = config["analysis"]["group_column"],
+        strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
+        dual_plots = "true" if config.get("taxa_processing", {}).get("generate_dual_plots", False) else "false",
         out_dir    = _COMP,
+        viz_dir    = f"{OUT_VIZ}/composition",
     log:
         f"{OUT}/logs/r_composition_plots.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/composition_plots.R \
             '{input.phylum_tsv}' \
             '{input.class_tsv}' \
             '{input.genus_tsv}' \
             '{input.metadata}' \
             '{params.group_col}' \
-            '{output.plots}' \
+            '{params.out_dir}' \
+            '{params.strategy}' \
+            '{params.dual_plots}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/composition_plots.pdf'     '{output.plots}'
+        mv '{params.out_dir}/composition_plots_raw.pdf' '{output.plots_raw}'
         """

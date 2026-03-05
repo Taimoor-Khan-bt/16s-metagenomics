@@ -12,14 +12,36 @@ suppressPackageStartupMessages({
 })
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 6) stop("Usage: composition_plots.R <phylum_tsv> <class_tsv> <genus_tsv> <metadata> <group_col> <out_pdf>")
+if (length(args) < 6) stop("Usage: composition_plots.R <phylum_tsv> <class_tsv> <genus_tsv> <metadata> <group_col> <out_dir> [strategy] [dual_plots]")
 
 phylum_tsv <- args[1]
 class_tsv  <- args[2]
 genus_tsv  <- args[3]
 meta_file  <- args[4]
 group_col  <- args[5]
-out_pdf    <- args[6]
+out_dir    <- args[6]
+strategy   <- if (length(args) >= 7) args[7] else "rename"
+dual_plots <- isTRUE(tolower(if (length(args) >= 8) args[8] else "false") == "true")
+
+# =============================================================================
+# format_taxon_label()
+# Converts raw SILVA taxonomy strings to publication-ready labels.
+#   In:  "k__Bacteria;p__Firmicutes;...;f__Lachnospiraceae;g__"
+#   Out: "Unclassified Lachnospiraceae"
+# =============================================================================
+format_taxon_label <- function(x) {
+  if (is.na(x) || nchar(trimws(x)) == 0 || x == "Other") return(x)
+  parts <- strsplit(gsub("\\|", ";", x), ";")[[1]]
+  parts <- trimws(parts)
+  clean <- sub("^[dpcofgskDPCOFGSK]__", "", parts)
+  non_empty <- clean[nchar(clean) > 0 & tolower(clean) != "uncultured"]
+  if (length(non_empty) == 0) return("Unclassified")
+  last_raw_clean <- sub("^[dpcofgskDPCOFGSK]__", "", parts[length(parts)])
+  if (nchar(trimws(last_raw_clean)) == 0) {
+    return(paste("Unclassified", non_empty[length(non_empty)]))
+  }
+  return(non_empty[length(non_empty)])
+}
 
 # ── 1. Load metadata (Defensive) ──────────────────────────────────────────────
 meta <- read.table(meta_file, header = TRUE, sep = "\t", 
@@ -43,10 +65,6 @@ load_relfreq <- function(tsv_file, level_name) {
   # Pivot to long format for ggplot
   df_long <- pivot_longer(df_t, -SampleID, names_to = "taxon", values_to = "rel_abund")
   
-  # Clean up taxon names (optional: removes the d__ p__ prefixes for cleaner plots)
-  df_long$taxon <- gsub(".*__[a-z]__", "", df_long$taxon)
-  df_long$taxon <- gsub(";__", "", df_long$taxon) # clean empty levels
-  
   df_long$level <- level_name
   return(df_long)
 }
@@ -68,7 +86,11 @@ collapse_other <- function(df, top_n = 12) {
 }
 
 # ── 4. Function: stacked barplot ──────────────────────────────────────────────
-make_barplot <- function(df, meta, group_col, level_name) {
+make_barplot <- function(df, meta, group_col, level_name, cleaned = TRUE) {
+  # Apply taxonomic label cleaning when requested (preserves "Other" as-is)
+  if (cleaned && strategy != "none") {
+    df <- df %>% mutate(taxon = sapply(taxon, format_taxon_label))
+  }
   # Merge metadata
   df <- inner_join(df, tibble::rownames_to_column(meta, "SampleID"), by = "SampleID")
   
@@ -101,29 +123,40 @@ make_barplot <- function(df, meta, group_col, level_name) {
 }
 
 # ── 5. Run Execution ──────────────────────────────────────────────────────────
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
 levels_data <- list(
   Phylum = load_relfreq(phylum_tsv, "Phylum"),
   Class  = load_relfreq(class_tsv,  "Class"),
   Genus  = load_relfreq(genus_tsv,  "Genus")
 )
 
-pdf(out_pdf, width = 16, height = 8)
-
-for (lvl in names(levels_data)) {
-  # Process and Plot
-  df_plot <- collapse_other(levels_data[[lvl]], top_n = 15)
-  print(make_barplot(df_plot, meta, group_col, lvl))
-  
-  # Summary Heatmap
+make_heatmap <- function(df_plot, meta, group_col, level_name) {
   hmap_df <- inner_join(df_plot, tibble::rownames_to_column(meta, "SampleID"), by = "SampleID") %>%
     group_by(!!sym(group_col), taxon) %>%
     summarise(mean_abund = mean(rel_abund), .groups = "drop")
-
-  print(ggplot(hmap_df, aes(x = !!sym(group_col), y = taxon, fill = mean_abund)) +
+  ggplot(hmap_df, aes(x = !!sym(group_col), y = taxon, fill = mean_abund)) +
     geom_tile(color = "white") +
     scale_fill_gradient(low = "white", high = "darkblue", labels = percent_format()) +
     geom_text(aes(label = percent(mean_abund, accuracy = 0.1)), size = 3) +
-    theme_minimal() + labs(title = paste("Heatmap Mean Abundance:", lvl)))
+    theme_minimal() +
+    labs(title = paste("Heatmap Mean Abundance:", level_name))
 }
 
-dev.off()
+write_composition_pdf <- function(out_pdf, cleaned) {
+  pdf(out_pdf, width = 16, height = 8)
+  for (lvl in names(levels_data)) {
+    df_plot <- collapse_other(levels_data[[lvl]], top_n = 15)
+    print(make_barplot(df_plot, meta, group_col, lvl, cleaned = cleaned))
+    print(make_heatmap(df_plot, meta, group_col, lvl))
+  }
+  dev.off()
+}
+
+# Raw PDF (SILVA strings intact — no prefix stripping)
+write_composition_pdf(file.path(out_dir, "composition_plots_raw.pdf"), cleaned = FALSE)
+
+# Cleaned PDF (format_taxon_label applied)
+write_composition_pdf(file.path(out_dir, "composition_plots.pdf"), cleaned = TRUE)
+
+message("Saved: composition_plots.pdf and composition_plots_raw.pdf")

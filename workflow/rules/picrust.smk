@@ -69,20 +69,28 @@ rule r_picrust2_differential:
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv",
         metadata = config["metadata_file"],
     output:
-        results = f"{_PICRUST}/pathway_differential.tsv",
-        plots   = f"{_PICRUST}/pathway_plots.pdf",
+        results   = f"{_PICRUST}/pathway_differential.tsv",
+        plots     = f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        plots_raw = f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
     params:
-        group_col = config["analysis"]["group_column"],
-        out_dir   = _PICRUST,
+        group_col  = config["analysis"]["group_column"],
+        strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
+        dual_plots = "true" if config.get("taxa_processing", {}).get("generate_dual_plots", False) else "false",
+        out_dir    = _PICRUST,
+        viz_dir    = f"{OUT_VIZ}/picrust2",
     log:
         f"{OUT}/logs/r_picrust2_differential.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/picrust2_stats.R \
             '{input.pathways}' \
             '{input.metadata}' \
             '{params.group_col}' \
             '{params.out_dir}' \
+            '{params.strategy}' \
+            '{params.dual_plots}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/pathway_plots.pdf'     '{output.plots}'
+        mv '{params.out_dir}/pathway_plots_raw.pdf' '{output.plots_raw}'
         """

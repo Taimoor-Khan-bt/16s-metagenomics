@@ -16,7 +16,7 @@ rule ancombc:
     Wildcard 'level': 2=Phylum, 6=Genus
     """
     input:
-        table    = f"{OUT}/table.qza",
+        table    = f"{OUT}/table_filtered.qza",  # mito/chloro/unassigned removed
         metadata = config["metadata_file"],
     output:
         differentials = f"{_DIFF}/ancombc_level{{level}}.qza",
@@ -44,14 +44,14 @@ rule viz_ancombc:
     input:
         differentials = f"{_DIFF}/ancombc_level{{level}}.qza",
     output:
-        viz = f"{_DIFF}/ancombc_level{{level}}.qzv",
+        viz = f"{OUT_VIZ}/differential/ancombc_level{{level}}.qzv",
     params:
         docker = DOCKER,
     log:
         f"{OUT}/logs/viz_ancombc_level{{level}}.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime composition tabulate \
             --i-data          '{input.differentials}' \
             --o-visualization '{output.viz}' \
@@ -94,26 +94,34 @@ rule r_lefse:
     Uses R package microbiomeMarker as the backend.
     """
     input:
-        # CHANGE: Use the original ASV table (hashes), not the collapsed genus table
-        table_tsv = f"{OUT}/exported/feature_table/feature-table.tsv",
+        # Use filtered table (mito/chloro/unassigned removed) for LEfSe
+        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
         taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv",
         metadata  = config["metadata_file"],
     output:
-        results = f"{_DIFF}/lefse_results.tsv",
-        plots   = f"{_DIFF}/lefse_plots.pdf",
+        results   = f"{_DIFF}/lefse_results.tsv",
+        plots     = f"{OUT_VIZ}/differential/lefse_plots.pdf",
+        plots_raw = f"{OUT_VIZ}/differential/lefse_plots_raw.pdf",
     params:
-        group_col = config["analysis"]["group_column"],
-        out_dir   = _DIFF,
+        group_col  = config["analysis"]["group_column"],
+        strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
+        dual_plots = "true" if config.get("taxa_processing", {}).get("generate_dual_plots", False) else "false",
+        out_dir    = _DIFF,
+        viz_dir    = f"{OUT_VIZ}/differential",
     log:
         f"{OUT}/logs/r_lefse.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         Rscript workflow/scripts/lefse_analysis.R \
             '{input.table_tsv}' \
             '{input.taxonomy}' \
             '{input.metadata}' \
             '{params.group_col}' \
             '{params.out_dir}' \
+            '{params.strategy}' \
+            '{params.dual_plots}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/lefse_plots.pdf'     '{output.plots}'
+        mv '{params.out_dir}/lefse_plots_raw.pdf' '{output.plots_raw}'
         """

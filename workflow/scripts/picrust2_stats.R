@@ -11,12 +11,36 @@ suppressPackageStartupMessages({
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 4) stop("Usage: picrust2_stats.R <pathways_tsv> <metadata> <group_col> <out_dir>")
+if (length(args) < 4) stop("Usage: picrust2_stats.R <pathways_tsv> <metadata> <group_col> <out_dir> [strategy] [dual_plots]")
 
 pathways_file <- args[1]
 meta_file     <- args[2]
 group_col     <- args[3]
 out_dir       <- args[4]
+strategy      <- if (length(args) >= 5) args[5] else "rename"
+dual_plots    <- isTRUE(tolower(if (length(args) >= 6) args[6] else "false") == "true")
+
+# =============================================================================
+# clean_pathway_label()
+# Converts MetaCyc pathway IDs/names to readable title-cased strings.
+#   In:  "PWY-7111: pyruvate_fermentation_to_isobutanol"
+#   Out: "Pyruvate Fermentation To Isobutanol"
+# =============================================================================
+clean_pathway_label <- function(x) {
+  if (is.na(x) || nchar(trimws(x)) == 0) return(x)
+  # Strip pathway ID prefix (e.g. "PWY-1234: ")
+  lbl <- sub("^[A-Z0-9.-]+[:-] ", "", x)
+  # Convert underscores and hyphens to spaces
+  lbl <- gsub("[_-]", " ", lbl)
+  # Title-case each word
+  lbl <- paste(sapply(strsplit(lbl, " ")[[1]], function(w) {
+    if (nchar(w) == 0) return(w)
+    paste0(toupper(substr(w, 1, 1)), tolower(substr(w, 2, nchar(w))))
+  }), collapse = " ")
+  # Truncate overly long labels
+  if (nchar(lbl) > 60) lbl <- paste0(substr(lbl, 1, 57), "...")
+  return(lbl)
+}
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -80,10 +104,41 @@ plot_df <- sig %>%
   pivot_longer(cols = starts_with("mean_"), names_to = "Group", values_to = "Abundance") %>%
   mutate(Group = gsub("mean_", "", Group))
 
+pdf(file.path(out_dir, "pathway_plots_raw.pdf"), width = 14, height = 8)
+
+plot_df_raw <- plot_df  # preserve raw pathway names
+
+# Grouped bar plot — raw labels
+p_bar_raw <- ggplot(plot_df_raw, aes(x = reorder(pathway, Abundance), y = Abundance, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw(base_size = 12) +
+  labs(title = "Top Predicted Pathways (raw labels)",
+       subtitle = "Omnibus Kruskal-Wallis Test",
+       x = "MetaCyc Pathway", y = "Relative Abundance") +
+  theme(legend.position = "bottom")
+print(p_bar_raw)
+
+p_heat_raw <- ggplot(plot_df_raw, aes(x = Group, y = pathway, fill = log10(Abundance + 1))) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme_minimal() +
+  labs(title = "Pathway Abundance Heatmap — raw labels (Log10 scale)",
+       x = "Group", y = "Pathway")
+print(p_heat_raw)
+dev.off()
+
+# Cleaned labels (apply clean_pathway_label when strategy != "none")
+if (strategy != "none") {
+  plot_df_clean <- plot_df %>% mutate(pathway = sapply(pathway, clean_pathway_label))
+} else {
+  plot_df_clean <- plot_df
+}
+
 pdf(file.path(out_dir, "pathway_plots.pdf"), width = 14, height = 8)
 
-# Grouped Bar Plot (Better for 3 groups than a Volcano plot)
-p_bar <- ggplot(plot_df, aes(x = reorder(pathway, Abundance), y = Abundance, fill = Group)) +
+p_bar <- ggplot(plot_df_clean, aes(x = reorder(pathway, Abundance), y = Abundance, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge") +
   coord_flip() +
   scale_fill_brewer(palette = "Set1") +
@@ -92,18 +147,15 @@ p_bar <- ggplot(plot_df, aes(x = reorder(pathway, Abundance), y = Abundance, fil
        subtitle = "Omnibus Kruskal-Wallis Test",
        x = "MetaCyc Pathway", y = "Relative Abundance") +
   theme(legend.position = "bottom")
-
 print(p_bar)
 
-# Heatmap of top pathways
-p_heat <- ggplot(plot_df, aes(x = Group, y = pathway, fill = log10(Abundance + 1))) +
+p_heat <- ggplot(plot_df_clean, aes(x = Group, y = pathway, fill = log10(Abundance + 1))) +
   geom_tile() +
   scale_fill_viridis_c() +
   theme_minimal() +
   labs(title = "Pathway Abundance Heatmap (Log10 scale)",
        x = "Group", y = "Pathway")
-
 print(p_heat)
 
 dev.off()
-message("Saved: pathway_differential.tsv and pathway_plots.pdf")
+message("Saved: pathway_differential.tsv, pathway_plots.pdf, pathway_plots_raw.pdf")

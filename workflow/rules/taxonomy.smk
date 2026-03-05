@@ -36,3 +36,44 @@ rule classify_taxonomy:
             --verbose \
             2>&1 | tee {log}
         """
+
+
+# =============================================================================
+# filter_taxa — Remove mitochondria, chloroplast and unassigned features.
+# Creates table_filtered.qza which is used by ALL downstream analyses. The
+# original table.qza is preserved for raw QC comparisons only.
+# Exclude list is driven by config taxa_processing.exclude_list (case-insensitive).
+# =============================================================================
+
+rule filter_taxa:
+    """
+    Filter out unwanted taxa (mitochondria, chloroplast, unassigned) from the
+    raw feature table using QIIME 2 taxa filter-table.
+
+    Output: table_filtered.qza — used by diversity, composition, and
+    differential abundance rules. table.qza remains untouched for QC.
+    """
+    input:
+        table    = f"{OUT}/table.qza",
+        taxonomy = f"{OUT}/taxonomy.qza",
+    output:
+        filtered = f"{OUT}/table_filtered.qza",
+    params:
+        docker      = DOCKER,
+        exclude_str = ",".join(config.get("taxa_processing", {}).get(
+                          "exclude_list", ["mitochondria", "chloroplast", "unassigned"]
+                      )),
+    log:
+        f"{OUT}/logs/filter_taxa.log",
+    shell:
+        """
+        mkdir -p $(dirname {log})
+        {params.docker} qiime taxa filter-table \
+            --i-table         '{input.table}' \
+            --i-taxonomy      '{input.taxonomy}' \
+            --p-exclude       '{params.exclude_str}' \
+            --p-mode          contains \
+            --o-filtered-table '{output.filtered}' \
+            --verbose \
+            2>&1 | tee {log}
+        """

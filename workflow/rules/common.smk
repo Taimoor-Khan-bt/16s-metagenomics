@@ -23,4 +23,5 @@ DOCKER = (
     f'"{IMG}"'
 )
 
-OUT = config["output_dir"]
+OUT     = config["output_dir"]
+OUT_VIZ = config.get("viz_dir", f"{OUT}/visualizations")  # all QZVs, PDFs, HTML plots

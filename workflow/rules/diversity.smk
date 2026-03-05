@@ -24,9 +24,9 @@ rule core_diversity:
     """
     input:
         phylogeny = f"{OUT}/rooted_tree.qza",
-        table     = f"{OUT}/table.qza",
+        table     = f"{OUT}/table_filtered.qza",   # mito/chloro/unassigned removed
         metadata  = config["metadata_file"],
-        tsv       = f"{_EXP}/feature_table/feature-table.tsv",
+        tsv       = f"{_EXP}/feature_table_filtered/feature-table.tsv",
     output:
         # Declare the outputs we use downstream (Snakemake watches these)
         rarefied_table      = f"{_CORE_DIV}/rarefied_table.qza",
@@ -38,25 +38,27 @@ rule core_diversity:
         jaccard_matrix      = f"{_CORE_DIV}/jaccard_distance_matrix.qza",
         unweighted_matrix   = f"{_CORE_DIV}/unweighted_unifrac_distance_matrix.qza",
         weighted_matrix     = f"{_CORE_DIV}/weighted_unifrac_distance_matrix.qza",
-        bray_curtis_emperor = f"{_CORE_DIV}/bray_curtis_emperor.qzv",
-        jaccard_emperor     = f"{_CORE_DIV}/jaccard_emperor.qzv",
-        unweighted_emperor  = f"{_CORE_DIV}/unweighted_unifrac_emperor.qzv",
-        weighted_emperor    = f"{_CORE_DIV}/weighted_unifrac_emperor.qzv",
+        bray_curtis_emperor = f"{OUT_VIZ}/diversity/bray_curtis_emperor.qzv",
+        jaccard_emperor     = f"{OUT_VIZ}/diversity/jaccard_emperor.qzv",
+        unweighted_emperor  = f"{OUT_VIZ}/diversity/unweighted_unifrac_emperor.qzv",
+        weighted_emperor    = f"{OUT_VIZ}/diversity/weighted_unifrac_emperor.qzv",
     params:
         docker         = DOCKER,
         sampling_depth = config["diversity"]["sampling_depth"],
         threads        = config["dada2"]["threads"],
         out_dir        = _CORE_DIV,
+        viz_dir        = f"{OUT_VIZ}/diversity",
     log:
         f"{OUT}/logs/core_diversity.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) '{params.viz_dir}'
         
         DEPTH="{params.sampling_depth}"
         if [ "$DEPTH" = "auto" ] || [ "$DEPTH" = "0" ]; then
             echo "Calculating minimum sequencing depth to avoid dropping any samples..."
             DEPTH=$(python3 -c "import pandas as pd; print(int(pd.read_csv('{input.tsv}', sep='\t', skiprows=1, index_col=0).sum(axis=0).min()))")
+            echo "Using filtered table for diversity (mito/chloro/unassigned excluded)"
             echo "Auto sampling depth dynamic value: $DEPTH"
         fi
 
@@ -70,6 +72,10 @@ rule core_diversity:
             --p-n-jobs-or-threads   {params.threads} \
             --output-dir            '{params.out_dir}' \
             2>&1 | tee {log}
+        mv '{params.out_dir}/bray_curtis_emperor.qzv'      '{output.bray_curtis_emperor}'
+        mv '{params.out_dir}/jaccard_emperor.qzv'          '{output.jaccard_emperor}'
+        mv '{params.out_dir}/unweighted_unifrac_emperor.qzv' '{output.unweighted_emperor}'
+        mv '{params.out_dir}/weighted_unifrac_emperor.qzv' '{output.weighted_emperor}'
         """
 
 
@@ -85,14 +91,14 @@ rule alpha_correlation:
         vector   = f"{_CORE_DIV}/{{metric}}_vector.qza",
         metadata = config["metadata_file"],
     output:
-        viz = f"{_CORE_DIV}/{{metric}}_correlation.qzv",
+        viz = f"{OUT_VIZ}/diversity/{{metric}}_correlation.qzv",
     params:
         docker = DOCKER,
     log:
         f"{OUT}/logs/alpha_correlation_{{metric}}.log",
     shell:
         """
-        mkdir -p $(dirname {log})
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
         {params.docker} qiime diversity alpha-correlation \
             --i-alpha-diversity '{input.vector}' \
             --m-metadata-file   '{input.metadata}' \
