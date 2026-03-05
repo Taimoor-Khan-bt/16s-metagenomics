@@ -5,6 +5,11 @@
 _DIFF = f"{OUT}/differential"
 _COMP = f"{OUT}/composition"
 
+# Constrain 'level' to digits only so viz_ancombc and da_barplot_ancombc
+# don't ambiguously match each other's output filenames (e.g. "2_barplot").
+wildcard_constraints:
+    level = r"\d+"
+
 # ── ANCOM-BC via QIIME 2 ─────────────────────────────────────────────────────
 
 rule ancombc:
@@ -16,13 +21,14 @@ rule ancombc:
     Wildcard 'level': 2=Phylum, 6=Genus
     """
     input:
-        table    = f"{OUT}/table_filtered.qza",  # mito/chloro/unassigned removed
+        table    = f"{_COMP}/{{level}}_table.qza",  # collapsed taxonomy table → readable feature IDs
         metadata = config["metadata_file"],
     output:
         differentials = f"{_DIFF}/ancombc_level{{level}}.qza",
     params:
         docker  = DOCKER,
         formula = config["analysis"]["ancombc_formula"],
+        reference_levels = config["analysis"]["ancombc_reference_level"],
     log:
         f"{OUT}/logs/ancombc_level{{level}}.log",
     shell:
@@ -32,7 +38,7 @@ rule ancombc:
             --i-table        '{input.table}' \
             --m-metadata-file '{input.metadata}' \
             --p-formula      '{params.formula}' \
-            --p-reference-levels Group::carries Sex::Female \
+            --p-reference-levels  {params.reference_levels} \
             --o-differentials '{output.differentials}' \
             --verbose \
             2>&1 | tee {log}
@@ -55,6 +61,31 @@ rule viz_ancombc:
         {params.docker} qiime composition tabulate \
             --i-data          '{input.differentials}' \
             --o-visualization '{output.viz}' \
+            2>&1 | tee {log}
+        """
+
+
+rule da_barplot_ancombc:
+    """
+    ANCOM-BC differential abundance bar chart (log fold change per feature).
+    Input is the collapsed taxonomy table so feature IDs are already taxonomy
+    strings. --p-level-delimiter ';' trims them to the lowest resolved rank.
+    """
+    input:
+        differentials = f"{_DIFF}/ancombc_level{{level}}.qza",
+    output:
+        viz = f"{OUT_VIZ}/differential/ancombc_level{{level}}_barplot.qzv",
+    params:
+        docker = DOCKER,
+    log:
+        f"{OUT}/logs/da_barplot_ancombc_level{{level}}.log",
+    shell:
+        """
+        mkdir -p $(dirname {log}) $(dirname {output.viz})
+        {params.docker} qiime composition da-barplot \
+            --i-data                '{input.differentials}' \
+            --p-level-delimiter     ';' \
+            --o-visualization       '{output.viz}' \
             2>&1 | tee {log}
         """
 

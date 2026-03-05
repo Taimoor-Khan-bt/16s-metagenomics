@@ -134,6 +134,7 @@ rule all_extended:
         *_KRONA_HTMLS,
         # ─ D: Differential abundance ──────────────────────────────────────
         expand(f"{OUT_VIZ}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
+        expand(f"{OUT_VIZ}/differential/ancombc_level{{level}}_barplot.qzv", level=ANCOMBC_LEVELS),
         expand(f"{OUT}/differential/ancombc_level{{level}}.tsv", level=ANCOMBC_LEVELS),
         f"{OUT}/differential/lefse_results.tsv",
         f"{OUT_VIZ}/differential/lefse_plots.pdf",
