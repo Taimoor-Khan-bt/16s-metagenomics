@@ -140,6 +140,24 @@ check_r_pkg() {
   fi
 }
 
+# Bioconductor package check — same detection logic, different fix hint
+check_bioc_pkg() {
+  local pkg="$1"
+  local result
+  result=$(mamba run -n "$QIIME2_ENV" Rscript -e \
+    "cat('$pkg' %in% rownames(installed.packages()))" 2>/dev/null || echo "FALSE")
+  if [[ "$result" == "TRUE" ]]; then
+    VER=$(mamba run -n "$QIIME2_ENV" Rscript -e \
+      "tryCatch(cat(as.character(packageVersion('$pkg'))), error=function(e) cat('installed'))" 2>/dev/null || echo "installed")
+    pass "R/$pkg: $VER"
+  else
+    local conda_name="bioconductor-$(echo "$pkg" | tr '[:upper:]' '[:lower:]')"
+    fail "R/$pkg: not installed"
+    fix "mamba install -n $QIIME2_ENV -c conda-forge -c bioconda $conda_name -y"
+    fix "  OR in R: BiocManager::install('$pkg')"
+  fi
+}
+
 
 if mamba run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
   R_VER=$(mamba run -n "$QIIME2_ENV" Rscript --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
@@ -162,8 +180,14 @@ if mamba run -n "$QIIME2_ENV" Rscript --version &>/dev/null 2>&1; then
   else
     warn "R/microbiomeMarker: not installed (LEfSe will use Wilcoxon fallback)"
     fix "In R: BiocManager::install('microbiomeMarker')"
-    fix "  OR: mamba install -n $QIIME2_ENV -c biocomba biocomductor-microbiomemarker -y"
+    fix "  OR: mamba install -n $QIIME2_ENV -c bioconda bioconductor-microbiomemarker -y"
   fi
+
+  # Bioconductor packages for phylogenetic tree visualization (H: ggtree plots)
+  BIOC_TREE_PKGS=(ggtree ggtreeExtra treeio)
+  for pkg in "${BIOC_TREE_PKGS[@]}"; do
+    check_bioc_pkg "$pkg"
+  done
 else
   fail "R: not installed in env $QIIME2_ENV"
   fix "mamba install -n $QIIME2_ENV -c mamba-forge r-base -y"

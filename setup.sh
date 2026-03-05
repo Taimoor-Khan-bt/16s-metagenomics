@@ -5,7 +5,7 @@
 # Checks and installs all prerequisites:
 #   1. Docker + QIIME 2 image
 #   2. Snakemake (in 'qiime2' conda env)
-#   3. R packages for extended analysis (A–G)
+#   3. R packages for extended analysis (A–H)
 #   4. KRONA (ktImportText) in qiime2 env
 #   5. PICRUSt2 conda environment
 #   6. Config file validation
@@ -129,6 +129,23 @@ else
       if (!requireNamespace('microbiomeMarker', quietly=TRUE)) BiocManager::install('microbiomeMarker', ask=FALSE)
       cat('microbiomeMarker:', as.character(packageVersion('microbiomeMarker')), '\n')
     " 2>&1 || warn "microbiomeMarker install failed — LEfSe will use Wilcoxon fallback"
+  fi
+
+  # Bioconductor packages for phylogenetic tree visualization (H: ggtree plots)
+  BIOC_TREE_CONDA=(bioconductor-ggtree bioconductor-ggtreeextra bioconductor-treeio)
+  warn "Installing Bioconductor tree packages: ${BIOC_TREE_CONDA[*]}"
+  if mamba install -n "$QIIME2_ENV" -c conda-forge -c bioconda "${BIOC_TREE_CONDA[@]}" -y 2>/dev/null; then
+    ok "ggtree / ggtreeExtra / treeio: installed via conda"
+  else
+    warn "Bioconductor conda packages unavailable — falling back to BiocManager in R…"
+    mamba run -n "$QIIME2_ENV" Rscript -e "
+      if (!requireNamespace('BiocManager', quietly=TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')
+      pkgs <- c('treeio', 'ggtree', 'ggtreeExtra')
+      for (p in pkgs) {
+        if (!requireNamespace(p, quietly=TRUE)) BiocManager::install(p, ask=FALSE)
+        cat(p, ':', as.character(packageVersion(p)), '\n')
+      }
+    " 2>&1 || warn "ggtree install via BiocManager failed — tree_plots.R will attempt auto-install at runtime"
   fi
 fi
 

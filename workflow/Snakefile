@@ -145,5 +145,11 @@ rule all_extended:
         # ─ G: PICRUSt2 functional prediction ─────────────────────────────
         f"{OUT}/picrust2/pathway_differential.tsv",
         f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        # ─ H: Phylogenetic tree visualizations (ggtree) ───────────────────
+        f"{OUT_VIZ}/phylogeny/01_tree_basic.pdf",
+        f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.pdf",
+        f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.pdf",
+        f"{OUT_VIZ}/phylogeny/04_tree_differential.pdf",
+        f"{OUT_VIZ}/phylogeny/05_tree_circular.pdf",
         # ─ Dual raw-label PDFs (only when taxa_processing.generate_dual_plots: true)
         *_DUAL_PLOT_OUTPUTS,
