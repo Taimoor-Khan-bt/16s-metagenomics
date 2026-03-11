@@ -1,77 +1,322 @@
 # =============================================================================
-# config/config.yaml — User configuration for the QIIME 2 Snakemake pipeline
+# config_template.yaml — Annotated reference configuration
 # =============================================================================
-# Edit this file for each study. All paths may be absolute or relative to the
-# project root (the directory where you run snakemake).
+#
+# PURPOSE
+#   This file documents every available configuration option.
+#   Copy it to config/config.yaml (or another name) and edit for your study.
+#   Run with:  snakemake all_extended --cores all --configfile config/config.yaml
+#
+# PATH RULES
+#   All paths may be absolute or relative to the project root
+#   (the directory where you run snakemake).
+#
+# REQUIRED VS OPTIONAL
+#   Options marked  [REQUIRED]  must be set for the pipeline to run.
+#   Options marked  [OPTIONAL]  have defaults and can be omitted entirely.
+# =============================================================================
 
-# ── Docker ──────────────────────────────────────────────────────────────────
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# The QIIME 2 Docker image used for all QIIME 2 steps.
+# Pull before running:  docker pull quay.io/qiime2/amplicon:2024.10
 docker:
-  image: "quay.io/qiime2/amplicon:2024.10"
-  # Pull with: docker pull quay.io/qiime2/amplicon:2024.10
+  image: "quay.io/qiime2/amplicon:2024.10"   # [REQUIRED] Docker image tag
+  # To use a different QIIME 2 version change the tag, e.g. 2024.5 or 2023.9.
 
-# ── Input / Output ───────────────────────────────────────────────────────────
-samples:       "config/samples.tsv"        # sample_id | r1 | r2 (one sample per row)
-metadata_file: "config/metadata.tsv"       # QIIME 2 metadata (#SampleID header)
+
+# ── Input files ───────────────────────────────────────────────────────────────
+# [REQUIRED] Path to the sample sheet TSV.
+# Format (tab-separated, no spaces in paths):
+#   sample_id    r1                              r2
+#   Sample01     data/raw/Sample01_R1.fastq.gz   data/raw/Sample01_R2.fastq.gz
+#   Sample02     data/raw/Sample02_R1.fastq.gz   data/raw/Sample02_R2.fastq.gz
+# Note: sample_id values must exactly match the #SampleID column in metadata.tsv.
+samples: "config/samples.tsv"
+
+# [REQUIRED] Path to the QIIME 2 metadata TSV.
+# First row:  #SampleID  [column1]  [column2]  ...
+# First column (#SampleID) must match the sample_id values in samples.tsv.
+# All metadata columns used in analysis.group_column or analysis.covariates
+# must appear in this file.
+metadata_file: "config/metadata.tsv"
+
+# [REQUIRED] Path to the pre-trained SILVA naive Bayes classifier QZA file.
+# Download SILVA 138.1 (full-length, 99% OTUs):
+#   wget "https://data.qiime2.org/classifiers/sklearn-1.4.2/silva/silva-138-99-nb-classifier.qza" \
+#        -O refs/silva-138-99-nb-classifier.qza
+# Region-specific classifiers (e.g., V4 515F/806R) are available at:
+#   https://docs.qiime2.org/2024.10/data-resources/
 classifier: "refs/silva-138-99-nb-classifier.qza"
-output_dir: "output/qiime2_run"         # all artifacts + QZVs written here
 
-# ── DADA2 denoising (Paired-End) ─────────────────────────────────────────────
+
+# ── Output directories ────────────────────────────────────────────────────────
+# [REQUIRED] Root output directory for all QZA artifacts and exported TSV/FASTA files.
+# All intermediate files are written here.
+output_dir: "output/my_study"
+
+# [OPTIONAL] Directory for all visualizations: QZV files, PDFs, HTML plots.
+# Defaults to output_dir/visualizations if omitted.
+viz_dir: "output/my_study/visualizations"
+
+
+# ── DADA2 denoising ───────────────────────────────────────────────────────────
+# DADA2 performs paired-end read quality filtering, merging, and chimera removal
+# to produce Amplicon Sequence Variants (ASVs).
 dada2:
-  trunc_len_f: 220     # truncate forward reads at this position (bp); 0 = no truncation
-  trunc_len_r: 220     # truncate reverse reads at this position
-  trim_left_f: 0       # trim N bases from the forward 5' end
-  trim_left_r: 0       # trim N bases from the reverse 5' end
-  threads: 0         # 0 = use all available cores
+  # [REQUIRED] Truncate forward reads at this position (bp).
+  # Reads shorter than trunc_len are discarded.
+  # Set based on the quality drop-off in your FastQC / MultiQC reports.
+  # Rule of thumb: truncate where median quality drops below Q25-Q30.
+  # Set to 0 to disable truncation (not recommended for paired-end).
+  trunc_len_f: 250
 
-# ── Diversity ────────────────────────────────────────────────────────────────
+  # [REQUIRED] Truncate reverse reads at this position (bp).
+  # Reverse reads typically have lower quality; use a smaller value than trunc_len_f.
+  # Ensure trunc_len_f + trunc_len_r - amplicon_length > 20 bp for successful merging.
+  trunc_len_r: 220
+
+  # [OPTIONAL] Trim N bases from the 5' end of forward reads before truncation.
+  # Use this to remove primer sequences if not already stripped by cutadapt.
+  # Default: 0 (no trimming)
+  trim_left_f: 0
+
+  # [OPTIONAL] Trim N bases from the 5' end of reverse reads.
+  # Default: 0 (no trimming)
+  trim_left_r: 0
+
+  # [OPTIONAL] Number of CPU threads for DADA2.
+  # 0 = use all available cores.
+  threads: 0
+
+
+# ── Diversity analysis ────────────────────────────────────────────────────────
 diversity:
-  sampling_depth: 'auto'    # 'auto' or 0 = auto-detect minimum read count to avoid dropping samples
+  # [OPTIONAL] Rarefaction depth for the diversity analysis.
+  # 'auto' — automatically use the minimum per-sample read count that retains
+  #           all samples. Equivalent to 0.
+  # integer — rare to this exact depth; samples with fewer reads are dropped.
+  # Recommendation: check dada2_stats.qzv / exports/dada2_stats/stats.tsv first
+  # and choose a depth that keeps ≥80% of your samples.
+  sampling_depth: 'auto'
+
+  # [OPTIONAL] Alpha diversity metrics to compute.
+  # All metrics are passed to qiime diversity core-metrics-phylogenetic.
+  # Available: faith_pd, shannon, evenness, observed_features
+  # faith_pd requires a rooted phylogenetic tree (always produced by this pipeline).
   alpha_metrics:
-    - faith_pd
-    - shannon
-    - evenness
-    - observed_features
+    - faith_pd           # Phylogenetic diversity (unique tree branch length per sample)
+    - shannon            # Shannon entropy (richness + evenness, log base 2)
+    - evenness           # Pielou's J (how evenly reads are spread across ASVs)
+    - observed_features  # Count of distinct ASVs per sample
+
+  # [OPTIONAL] Beta diversity metrics to compute.
+  # Phylogeny-aware metrics (unifrac) require rooted_tree.qza.
+  # aitchison is computed from CLR-transformed counts (robust to compositionality).
   beta_metrics:
-    - unweighted_unifrac
-    - weighted_unifrac
-    - bray_curtis
-    - jaccard
+    - bray_curtis           # Abundance-weighted dissimilarity (no phylogeny)
+    - jaccard               # Presence/absence dissimilarity (no phylogeny)
+    - unweighted_unifrac    # Presence/absence + phylogenetic distances
+    - weighted_unifrac      # Abundance-weighted + phylogenetic distances
 
-# ── Metadata ──────────────────────────────────────────────────────────────────
+
+# ── Metadata columns ──────────────────────────────────────────────────────────
+# These settings control which metadata column is the primary group variable
+# for QIIME 2 visualizations (alpha group significance QZVs).
 metadata:
-  group_column: "Group"   # column for alpha/beta group significance tests
-                             # must have ≥2 samples per category
+  # [REQUIRED] Column name in metadata.tsv used for group-level significance.
+  # Must have ≥2 unique values and ≥2 samples per value.
+  # Example values: "Treatment", "Disease_Status", "Group", "Condition"
+  group_column: "Group"
 
-# ── Extended analysis strategy ───────────────────────────────────────────────
+
+# ── Extended analysis ─────────────────────────────────────────────────────────
+# Settings for the R-based statistical analyses (triggered by rule all_extended).
 analysis:
-  group_column: "Group"           # primary comparison variable
-  
-  # ── Confounders / Covariates ───────────────────────────────────────────────
-  # These variables are included in the GLM (Alpha diversity) and 
-  # PERMANOVA / adonis2 (Beta diversity) models to adjust for confounding.
-  # Ensure these exact names match your metadata column headers!
-  covariates:
-    - "Age"             # Age
-    - "Sex"                 # Gender
-    # - "Caries_Severity"     # DMFT Category (or use DMFT_Score)
-    # - "Toothbrush_Use"    # Add this column to your metadata first!
-  
-  # Taxonomy levels: 2=Phylum, 3=Class, 6=Genus (SILVA)
-  collapse_levels:
-    - "2"   # phylum
-    - "3"   # class
-    - "6"   # genus
-  ancombc_levels:
-    - "2"   # phylum differential abundance
-    - "6"   # genus differential abundance
-    
-  # Formula passed to ANCOM-BC for differential abundance testing.
-  # The formula MUST include your primary group_column plus confounders.
-  ancombc_formula: "Stunting + Sex + Age"
-  
-  core_prevalence: 0.5                            # fraction of samples to define core
+  # [REQUIRED] Primary comparison variable — the main biological group of interest.
+  # Must match a column name in metadata.tsv exactly (case-sensitive).
+  # This variable is used in GLM, PERMANOVA, ANCOM-BC, and core microbiome tests.
+  group_column: "Group"
 
-# ── PICRUSt2 ─────────────────────────────────────────────────────────────────
+  # [OPTIONAL] Covariates to adjust for in multivariable models.
+  # These columns are added to:
+  #   - GLM formula: metric ~ group_column + covariate1 + covariate2
+  #   - PERMANOVA:   distance ~ group_column + covariate1 + covariate2
+  #   - ANCOM-BC:    see ancombc_formula below
+  # Requirements:
+  #   - Column names must exactly match headers in metadata.tsv
+  #   - Categorical covariates must have ≥2 levels with ≥2 samples each
+  #   - Continuous covariates (e.g., Age, BMI) are supported in GLM and ANCOM-BC
+  #     but NOT in PERMANOVA (adonis2) — comment them out for PERMANOVA if needed
+  covariates:
+    - "Sex"         # Example: gender / biological sex
+    # - "Age"       # Example: numeric age — valid for GLM + ANCOM-BC, not PERMANOVA
+    # - "BMI"       # Example: body mass index
+    # - "Smoking"   # Example: smoking status (Yes/No)
+
+  # [OPTIONAL] Taxonomy collapse levels for composition and differential abundance.
+  # Uses SILVA/Greengenes taxonomy level numbering:
+  #   1 = Domain / Kingdom
+  #   2 = Phylum
+  #   3 = Class
+  #   4 = Order
+  #   5 = Family
+  #   6 = Genus
+  #   7 = Species
+  # Relative abundance TSVs, stacked bar plots, and Krona charts are produced
+  # for each level listed here.
+  collapse_levels:
+    - "2"   # Phylum
+    - "3"   # Class
+    - "6"   # Genus
+
+  # [OPTIONAL] Taxonomy levels for ANCOM-BC differential abundance testing.
+  # Subset of (or equal to) collapse_levels.
+  # Running at both Phylum and Genus is the standard approach.
+  ancombc_levels:
+    - "2"   # Phylum
+    - "6"   # Genus
+
+  # [REQUIRED for differential abundance] Formula passed to ANCOM-BC (bias-corrected).
+  # Must include group_column as the first term, followed by any covariates.
+  # Do NOT add a tilde (~) — provide only the right-hand side.
+  # Examples:
+  #   "Group + Sex"
+  #   "Treatment + Age + Sex + BMI"
+  ancombc_formula: "Group + Sex"
+
+  # [OPTIONAL] Reference categories for the ANCOM-BC contrasts.
+  # Format: "ColumnName::ReferenceLevel ColumnName2::ReferenceLevel2 ..."
+  # All variables in ancombc_formula must be listed here.
+  # The reference level is the denominator group for log-fold-change calculations.
+  # Examples:
+  #   "Group::Control Sex::Male"
+  #   "Treatment::Placebo Age_Group::Young Sex::F"
+  ancombc_reference_level: "Group::Control Sex::Male"
+
+  # [OPTIONAL] Prevalence threshold for core microbiome definition.
+  # An ASV is considered "core" if it is present in at least this fraction
+  # of samples within a group.
+  # 0.5 = present in ≥50% of samples (standard threshold)
+  # 0.8 = present in ≥80% of samples (stringent)
+  core_prevalence: 0.5
+
+
+# ── PICRUSt2 functional prediction ───────────────────────────────────────────
+# PICRUSt2 predicts MetaCyc pathway abundances from the ASV table using
+# phylogenetic placement. It runs in a separate conda environment.
 picrust:
-  env: "picrust2"        # conda env name with PICRUSt2 installed
-  # Install: mamba create -n picrust2 -c conda-forge -c bioconda picrust2 -y
+  # [REQUIRED for PICRUSt2 steps] Name of the conda environment with PICRUSt2.
+  # Create it with:
+  #   mamba create -n picrust2 -c conda-forge -c bioconda picrust2 -y
+  env: "picrust2"
+
+
+# ── Krona interactive visualization ───────────────────────────────────────────
+# Produces interactive HTML taxonomy charts using KtImportText.
+# Requires the 'krona' tool:
+#   mamba install -n snakemake -c bioconda krona
+#   ktUpdateTaxonomy.sh
+krona:
+  # [OPTIONAL] Taxonomy levels to generate Krona HTML files for.
+  # Uses the same level numbers as analysis.collapse_levels.
+  levels:
+    - "2"   # Phylum
+    - "3"   # Class
+    - "6"   # Genus
+
+  # [OPTIONAL] true = generate one interactive tab per sample plus a merged tab.
+  # Useful for per-sample exploration in publications.
+  per_sample: true
+
+  # [OPTIONAL] Overlay LEfSe LDA scores on Krona taxon nodes.
+  # Requires differential/lefse_results.tsv to exist.
+  annotate_differential: true
+
+  # [OPTIONAL] Show Shannon + observed ASV counts in Krona sample tab titles.
+  annotate_alpha: true
+
+  # [OPTIONAL] Conda environment containing ktImportText.
+  # Leave empty ("") to use the tool from PATH.
+  krona_env: ""
+
+
+# ── Taxa filtering and label processing ───────────────────────────────────────
+taxa_processing:
+  # [OPTIONAL] Strategy for unresolved taxonomy labels in plots:
+  #   rename — replace trailing-rank strings like "D_5__uncultured bacterium"
+  #            with "Unclassified [Parent]" (default, recommended)
+  #   filter — hard-remove features with low-confidence labels
+  #   none   — no label transformation (raw SILVA strings used in plots)
+  strategy: "rename"
+
+  # [OPTIONAL] Taxa to always exclude from the filtered feature table.
+  # Applied to diversity, composition, differential abundance, and PICRUSt2.
+  # The original table.qza is never modified — exclusion creates table_filtered.qza.
+  # Do not remove "unclassified" here if you want to keep unknown taxa.
+  exclude_list:
+    - "mitochondria"
+    - "chloroplast"
+    - "unassigned"
+
+  # [OPTIONAL] When true, R plot scripts produce two PDFs per analysis:
+  #   <name>.pdf      — cleaned / renamed labels (for presentation/publication)
+  #   <name>_raw.pdf  — original SILVA strings (for expert review)
+  # When false, only the cleaned PDF is produced.
+  generate_dual_plots: false
+
+
+# ── Phylogenetic tree visualization (ggtree) ──────────────────────────────────
+# Five annotated tree plots are produced in visualizations/phylogeny/:
+#   01_tree_basic.pdf              — rectangular cladogram, genus labels
+#   02_tree_abundance_heatmap.pdf  — per-sample relative abundance ring
+#   03_tree_phylum_colorstrip.pdf  — phylum colour strip outer ring
+#   04_tree_differential.pdf       — LEfSe LDA score bars on tree
+#   05_tree_circular.pdf           — circular layout with all annotations
+# R packages required (auto-installed on first run):
+#   ape, ggtree, ggtreeExtra, ggplot2, dplyr, tidyr, scales, RColorBrewer, treeio
+phylogeny:
+  # [OPTIONAL] Prune tree tips matching exclude_list before ggtree plots.
+  # Recommended: true (produces cleaner, less cluttered tree visualizations).
+  export_filtered_tree: true
+
+
+# =============================================================================
+# EXAMPLE CONFIGURATIONS
+# =============================================================================
+#
+# EXAMPLE 1 — Simple 2-group comparison (e.g., case vs. control), no covariates
+# ---------------------------------------------------------------------------
+# analysis:
+#   group_column: "Disease_Status"      # values: "Case", "Control"
+#   covariates: []                      # no covariates
+#   collapse_levels: ["2", "6"]
+#   ancombc_levels: ["2", "6"]
+#   ancombc_formula: "Disease_Status"
+#   ancombc_reference_level: "Disease_Status::Control"
+#   core_prevalence: 0.5
+#
+# EXAMPLE 2 — Multi-group comparison with age + sex covariates
+# ---------------------------------------------------------------------------
+# analysis:
+#   group_column: "Treatment"           # values: "Placebo", "LowDose", "HighDose"
+#   covariates:
+#     - "Sex"
+#     - "Age_Group"                     # categorical; Age (numeric) OK for GLM only
+#   collapse_levels: ["2", "3", "6"]
+#   ancombc_levels: ["2", "6"]
+#   ancombc_formula: "Treatment + Sex + Age_Group"
+#   ancombc_reference_level: "Treatment::Placebo Sex::Male Age_Group::Young"
+#   core_prevalence: 0.5
+#
+# EXAMPLE 3 — Longitudinal / paired comparison
+# ---------------------------------------------------------------------------
+# analysis:
+#   group_column: "Timepoint"           # values: "Baseline", "Week4", "Week12"
+#   covariates:
+#     - "SubjectID"                     # include subject as covariate for pairing
+#     - "Sex"
+#   ancombc_formula: "Timepoint + SubjectID + Sex"
+#   ancombc_reference_level: "Timepoint::Baseline Sex::Female"
+#   core_prevalence: 0.5
+# =============================================================================

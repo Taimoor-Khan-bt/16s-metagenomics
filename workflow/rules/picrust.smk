@@ -83,7 +83,7 @@ rule r_picrust2_differential:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/picrust2_stats.R \
+        {RSCRIPT} workflow/scripts/picrust2_stats.R \
             '{input.pathways}' \
             '{input.metadata}' \
             '{params.group_col}' \

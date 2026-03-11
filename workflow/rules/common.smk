@@ -25,3 +25,10 @@ DOCKER = (
 
 OUT     = config["output_dir"]
 OUT_VIZ = config.get("viz_dir", f"{OUT}/visualizations")  # all QZVs, PDFs, HTML plots
+
+# Resolve Rscript from the same conda env as this snakemake process.
+# Falls back to bare 'Rscript' if not found (e.g. Rscript already on PATH).
+import shutil, sys as _sys
+_snakemake_bin = os.path.dirname(os.path.abspath(_sys.executable))  # e.g. .../envs/qiime2/bin
+_r_candidate   = os.path.join(_snakemake_bin, "Rscript")
+RSCRIPT = _r_candidate if os.path.isfile(_r_candidate) else (shutil.which("Rscript") or "Rscript")

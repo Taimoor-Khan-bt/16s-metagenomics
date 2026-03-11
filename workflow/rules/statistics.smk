@@ -127,7 +127,7 @@ rule r_alpha_stats:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/alpha_stats.R \
+        {RSCRIPT} workflow/scripts/alpha_stats.R \
             '{input.metadata}' \
             '{params.alpha_dir}' \
             '{params.group_col}' \
@@ -165,7 +165,7 @@ rule r_beta_stats:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/beta_stats.R \
+        {RSCRIPT} workflow/scripts/beta_stats.R \
             '{input.table_tsv}' \
             '{input.metadata}' \
             '{input.bray_dm}' \
@@ -227,7 +227,7 @@ rule r_core_microbiome:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/core_microbiome.R \
+        {RSCRIPT} workflow/scripts/core_microbiome.R \
             '{input.table_tsv}' \
             '{input.taxonomy}' \
             '{input.metadata}' \

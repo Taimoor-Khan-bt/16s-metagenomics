@@ -133,7 +133,7 @@ rule r_tree_plots:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.out_dir}'
-        Rscript workflow/scripts/tree_plots.R \
+        {RSCRIPT} workflow/scripts/tree_plots.R \
             '{input.tree_nwk}' \
             '{input.taxonomy_tsv}' \
             '{input.table_tsv}' \

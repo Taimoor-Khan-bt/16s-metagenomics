@@ -144,7 +144,7 @@ rule r_lefse:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/lefse_analysis.R \
+        {RSCRIPT} workflow/scripts/lefse_analysis.R \
             '{input.table_tsv}' \
             '{input.taxonomy}' \
             '{input.metadata}' \

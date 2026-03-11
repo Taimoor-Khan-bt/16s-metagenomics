@@ -137,5 +137,56 @@ p <- p + geom_text(data = annot,
                    inherit.aes = FALSE)
 
 print(p)
+
+# ── Page 2: GLM Forest Plot ───────────────────────────────────────────────────
+# Collect GLM coefficients from per-metric TSV files and plot estimate ± 95% CI
+# for the primary group term across all alpha diversity metrics.
+glm_rows <- list()
+for (m in names(alpha_list)) {
+  glm_file <- file.path(out_dir, paste0(m, "_glm.tsv"))
+  if (file.exists(glm_file)) {
+    gdf <- read.table(glm_file, header = TRUE, sep = "\t",
+                      stringsAsFactors = FALSE, check.names = FALSE)
+    # Keep only rows for the primary group variable (exclude Intercept, covariates)
+    gdf <- gdf[grepl(paste0("^", group_col), gdf$term), , drop = FALSE]
+    if (nrow(gdf) > 0) glm_rows[[m]] <- gdf
+  }
+}
+
+if (length(glm_rows) > 0) {
+  forest_df <- do.call(rbind, glm_rows)
+  forest_df$ci_lo   <- forest_df$estimate - 1.96 * forest_df$std_error
+  forest_df$ci_hi   <- forest_df$estimate + 1.96 * forest_df$std_error
+  forest_df$sig     <- ifelse(!is.na(forest_df$p_value) & forest_df$p_value < 0.05,
+                              "p < 0.05", "p ≥ 0.05")
+  forest_df$label   <- paste0("β=", round(forest_df$estimate, 3),
+                               "  p=", signif(forest_df$p_value, 3))
+  # Shorten term label: strip group_col prefix for display
+  forest_df$term_short <- sub(paste0("^", group_col), "", forest_df$term)
+  forest_df$row_id  <- paste0(forest_df$metric, "  (", forest_df$term_short, ")")
+
+  pf <- ggplot(forest_df, aes(x = estimate, y = row_id, color = sig)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+    geom_errorbarh(aes(xmin = ci_lo, xmax = ci_hi), height = 0.25, linewidth = 0.8) +
+    geom_point(size = 3.5) +
+    geom_text(aes(label = label), nudge_y = 0.35, size = 3, show.legend = FALSE) +
+    scale_color_manual(values = c("p < 0.05" = "#D32F2F", "p ≥ 0.05" = "#1565C0"),
+                       name = "Significance") +
+    theme_bw(base_size = 12) +
+    theme(legend.position = "bottom",
+          axis.text.y   = element_text(size = 11),
+          panel.grid.minor = element_blank()) +
+    labs(x     = paste0("GLM Estimate (ref = reference level of ", group_col, ")"),
+         y     = "Alpha metric  (group contrast)",
+         title = paste("Multivariable GLM — Effect of", group_col, "on Alpha Diversity"),
+         subtitle = paste("Adjusted for:",
+                          if (length(covariates) > 0) paste(covariates, collapse = ", ")
+                          else "no covariates"))
+  print(pf)
+  message("GLM forest plot added to alpha_plots.pdf")
+} else {
+  message("No GLM files found — skipping forest plot page")
+}
+
 dev.off()
 message("Saved: alpha_plots.pdf")

@@ -73,10 +73,28 @@ if (length(all_core_ids) > 0) {
       count_matrix[2, i] <- sum(tab[tx_id, grp == g] == 0) # Absent
     }
     
-    # Use Chi-square for the omnibus difference across all groups
-    p_val <- tryCatch(chisq.test(count_matrix)$p.value, error = function(e) NA)
-    
-    res <- data.frame(FeatureID = tx_id, Taxon = get_tax_name(tx_id), p_value = p_val)
+    # Choose test based on number of groups and expected cell counts:
+    #   2 groups  → Fisher's Exact (exact p-value for 2×2 tables)
+    #   3+ groups with any expected count < 5 → Fisher's with Monte Carlo simulation
+    #   3+ groups, all expected counts ≥ 5     → Chi-square approximation is valid
+    test_used <- "chi_square"
+    p_val <- tryCatch({
+      if (length(grp_levels) == 2) {
+        test_used <<- "fisher_exact"
+        fisher.test(count_matrix)$p.value
+      } else {
+        expected <- suppressWarnings(chisq.test(count_matrix)$expected)
+        if (any(expected < 5, na.rm = TRUE)) {
+          test_used <<- "fisher_exact_simulated"
+          fisher.test(count_matrix, simulate.p.value = TRUE, B = 2000)$p.value
+        } else {
+          chisq.test(count_matrix)$p.value
+        }
+      }
+    }, error = function(e) { message("Test failed for ", tx_id, ": ", e$message); NA })
+
+    res <- data.frame(FeatureID = tx_id, Taxon = get_tax_name(tx_id),
+                      test_used = test_used, p_value = p_val)
     # Add Boolean flags for each group
     for (g in grp_levels) { res[[paste0("is_core_", g)]] <- tx_id %in% core_ids[[g]] }
     return(res)
@@ -93,13 +111,109 @@ if (length(all_core_ids) > 0) {
 }
 
 # ── 6. Plotting ─────────────────────────────────────────────────────────────
-pdf(file.path(out_dir, "core_plots.pdf"), width = 12, height = 8)
+
+# Helper: extract readable short name from SILVA taxonomy string.
+# Returns the deepest non-empty rank; if the result would be duplicated across
+# the table it appends the genus + a numeric suffix to keep rows distinct.
+short_tax <- function(x) {
+  parts <- strsplit(x, ";")[[1]]
+  parts <- trimws(gsub("[a-z]__", "", parts))
+  parts <- parts[nchar(parts) > 0]
+  if (length(parts) == 0) return(x)
+  parts[length(parts)]
+}
+
+make_unique_labels <- function(ids, taxa) {
+  labels <- sapply(taxa, short_tax)
+  # For duplicated short names, prepend genus and append an index
+  dupes <- names(which(table(labels) > 1))
+  if (length(dupes) > 0) {
+    for (d in dupes) {
+      idx <- which(labels == d)
+      labels[idx] <- paste0(d, " ASV", seq_along(idx))
+    }
+  }
+  labels
+}
+
+pdf(file.path(out_dir, "core_plots.pdf"), width = 13, height = 8)
+
+# ── Page 1: Prevalence barplot + significance annotation ─────────────────────
+if (exists("stats_df") && nrow(stats_df) > 0) {
+  # Build per-group prevalence data
+  prev_rows <- lapply(all_core_ids, function(tx_id) {
+    do.call(rbind, lapply(grp_levels, function(g) {
+      samp_g <- common_samples[grp == g]
+      prev   <- sum(tab[tx_id, samp_g] > 0) / length(samp_g)
+      data.frame(FeatureID = tx_id, Group = g, Prevalence = prev,
+                 stringsAsFactors = FALSE)
+    }))
+  })
+  prev_df <- do.call(rbind, prev_rows)
+
+  # Attach p_adj and unique short names (disambiguates same-genus ASVs)
+  unique_labels <- make_unique_labels(stats_df$FeatureID, stats_df$Taxon)
+  id_to_label   <- setNames(unique_labels, stats_df$FeatureID)
+
+  prev_df <- merge(prev_df,
+                   stats_df[, c("FeatureID", "Taxon", "test_used", "p_value", "p_adj")],
+                   by = "FeatureID")
+  prev_df$ShortName <- id_to_label[prev_df$FeatureID]
+  prev_df$Significant <- ifelse(!is.na(prev_df$p_adj) & prev_df$p_adj < 0.05,
+                                "p_adj < 0.05", "p_adj ≥ 0.05")
+
+  # Build label: show p_adj once per taxon (on the group with highest prevalence)
+  label_df <- prev_df[ave(prev_df$Prevalence, prev_df$FeatureID, FUN = max) ==
+                        prev_df$Prevalence, ]
+  label_df <- label_df[!duplicated(label_df$FeatureID), ]
+  label_df$label <- paste0("p_adj=", signif(label_df$p_adj, 2))
+
+  # Cap at top 30 taxa by max prevalence across groups for readability
+  top_ids <- names(sort(tapply(prev_df$Prevalence, prev_df$FeatureID, max),
+                        decreasing = TRUE))[seq_len(min(30, length(all_core_ids)))]
+  plot_df  <- prev_df[prev_df$FeatureID %in% top_ids, ]
+  label_df <- label_df[label_df$FeatureID %in% top_ids, ]
+
+  # Order taxa by descending max prevalence
+  tax_order <- names(sort(tapply(plot_df$Prevalence, plot_df$ShortName, max),
+                          decreasing = TRUE))
+  plot_df$ShortName  <- factor(plot_df$ShortName,  levels = rev(tax_order))
+  label_df$ShortName <- factor(label_df$ShortName, levels = rev(tax_order))
+
+  p1 <- ggplot(plot_df, aes(x = Prevalence, y = ShortName, fill = Group)) +
+    geom_col(position = position_dodge(width = 0.7), width = 0.65, alpha = 0.85) +
+    # One label per taxon, pinned at x = 1.01 (right margin), no dodge
+    geom_text(data = label_df,
+              aes(x = 1.01, y = ShortName, label = label, color = Significant),
+              inherit.aes = FALSE, hjust = 0, size = 3) +
+    geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey40") +
+    scale_x_continuous(labels = scales::percent_format(), limits = c(0, 1.30),
+                       expand = c(0, 0)) +
+    scale_color_manual(values = c("p_adj < 0.05" = "#C62828", "p_adj \u2265 0.05" = "grey50"),
+                       name = "Significance") +
+    scale_fill_brewer(palette = "Set2", name = group_col) +
+    theme_bw(base_size = 11) +
+    theme(legend.position   = "right",
+          axis.text.y       = element_text(size = 9),
+          panel.grid.major.y = element_blank()) +
+    labs(x     = paste0("Prevalence (dashed = ", prevalence * 100, "% threshold)"),
+         y     = "Taxon",
+         title = paste("Core Microbiome Prevalence by", group_col),
+         subtitle = paste0("Taxa present in \u2265", prevalence * 100,
+                           "% of samples in at least one group  |  ",
+                           sum(!is.na(stats_df$p_adj) & stats_df$p_adj < 0.05),
+                           " taxa with p_adj < 0.05"))
+  print(p1)
+}
+
+# ── Page 2: UpSetR intersection diagram ──────────────────────────────────────
 if (requireNamespace("UpSetR", quietly = TRUE) && length(grp_levels) > 1) {
-  upset_list <- lapply(core_ids, function(ids) if(length(ids)>0) ids else character(0))
-  # Ensure we have data for the plot
-  if(sum(sapply(upset_list, length)) > 0) {
-     print(UpSetR::upset(UpSetR::fromList(upset_list), order.by = "freq", 
-                         main.bar.color = "steelblue", sets.bar.color = "darkgreen"))
+  upset_list <- lapply(core_ids, function(ids) if (length(ids) > 0) ids else character(0))
+  if (sum(sapply(upset_list, length)) > 0) {
+    print(UpSetR::upset(UpSetR::fromList(upset_list), order.by = "freq",
+                        main.bar.color = "steelblue", sets.bar.color = "darkgreen",
+                        text.scale = 1.4))
   }
 }
+
 dev.off()

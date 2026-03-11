@@ -96,3 +96,4 @@ config/metadata.tsv
 refs/
 *.qza
 *.qzv
+docs/methodology_*.txt

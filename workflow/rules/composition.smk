@@ -190,7 +190,7 @@ rule r_composition_plots:
     shell:
         """
         mkdir -p $(dirname {log}) '{params.viz_dir}'
-        Rscript workflow/scripts/composition_plots.R \
+        {RSCRIPT} workflow/scripts/composition_plots.R \
             '{input.phylum_tsv}' \
             '{input.class_tsv}' \
             '{input.genus_tsv}' \
