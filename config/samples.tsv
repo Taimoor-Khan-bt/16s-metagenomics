@@ -1,0 +1,7 @@
+# Sample sheet — one row per sample
+# Columns: sample_id (must match #SampleID in metadata.tsv), r1 (forward reads), r2 (reverse reads)
+# Paths may be absolute or relative to the project root.
+sample_id	r1	r2
+Sample01	data/raw/Sample01_R1.fastq.gz	data/raw/Sample01_R2.fastq.gz
+Sample02	data/raw/Sample02_R1.fastq.gz	data/raw/Sample02_R2.fastq.gz
+Sample03	data/raw/Sample03_R1.fastq.gz	data/raw/Sample03_R2.fastq.gz

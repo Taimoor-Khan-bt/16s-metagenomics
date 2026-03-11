@@ -85,11 +85,9 @@ test_phase3.sh
 16s-metagenomics-vis.R
 16s_pipeline.yaml
 # ── Dynamic Config Files ─────────────────────────────────────────────────────
-# Ignore the active configuration and sample sheets that are specific to the 
-# user's current local run, but track the templates.
+# Ignore the active project-specific config; users should copy config_template.yaml.
+# samples.tsv and metadata.tsv are tracked as generic examples for new users.
 config/config.yaml
-config/samples.tsv
-config/metadata.tsv
 
 # ── Reference Databases ──────────────────────────────────────────────────────
 # Ignore large pre-trained classifier and reference sequence artifacts
