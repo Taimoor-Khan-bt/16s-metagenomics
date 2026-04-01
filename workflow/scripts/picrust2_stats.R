@@ -128,6 +128,8 @@ p_heat_raw <- ggplot(plot_df_raw, aes(x = Group, y = pathway, fill = log10(Abund
        x = "Group", y = "Pathway")
 print(p_heat_raw)
 dev.off()
+ggsave(file.path(out_dir, "pathway_plots_raw.png"),
+       plot = p_bar_raw, width = 14, height = 8, units = "in", dpi = 600)
 
 # Cleaned labels (apply clean_pathway_label when strategy != "none")
 if (strategy != "none") {
@@ -158,4 +160,6 @@ p_heat <- ggplot(plot_df_clean, aes(x = Group, y = pathway, fill = log10(Abundan
 print(p_heat)
 
 dev.off()
-message("Saved: pathway_differential.tsv, pathway_plots.pdf, pathway_plots_raw.pdf")
+ggsave(file.path(out_dir, "pathway_plots.png"),
+       plot = p_bar, width = 14, height = 8, units = "in", dpi = 600)
+message("Saved: pathway_differential.tsv, pathway_plots.pdf/.png, pathway_plots_raw.pdf/.png")

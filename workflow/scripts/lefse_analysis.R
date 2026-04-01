@@ -77,54 +77,245 @@ meta <- meta[common_samples, , drop = FALSE]
 
 message("Final check: Table has ", ncol(tab_final), " samples. Metadata has ", nrow(meta), " samples.")
 
-# ── 4. microbiomeMarker LEfSe ────────────────────────────────────────────────
+# ── 4. microbiomeMarker LEfSe (Phylum + Genus levels) ───────────────────────
+
+# Helper: parse SILVA taxonomy string into 7-column hierarchical tax_table
+parse_silva_taxonomy <- function(tax_strings, row_ids) {
+  ranks   <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+  pfx_map <- list(d__=1L, k__=1L, p__=2L, c__=3L, o__=4L, f__=5L, g__=6L, s__=7L)
+  mat <- matrix("Unclassified", nrow = length(row_ids), ncol = length(ranks),
+                dimnames = list(row_ids, ranks))
+  for (i in seq_along(row_ids)) {
+    s <- tax_strings[i]
+    if (is.na(s) || nchar(trimws(s)) == 0) next
+    s     <- gsub("\\|", "; ", s)
+    parts <- trimws(strsplit(s, ";")[[1]])
+    for (part in parts) {
+      for (pfx in names(pfx_map)) {
+        if (startsWith(part, pfx)) {
+          val <- trimws(sub(pfx, "", part, fixed = TRUE))
+          if (nchar(val) > 0 && !tolower(val) %in% c("uncultured", "")) {
+            mat[i, pfx_map[[pfx]]] <- val
+          }
+          break
+        }
+      }
+    }
+  }
+  mat
+}
+
+# Helper: ensure a file exists (write placeholder if not)
+ensure_file <- function(path, msg = "No significant markers") {
+  if (file.exists(path)) return(invisible(NULL))
+  if (endsWith(path, ".pdf")) {
+    grDevices::pdf(path, width = 8, height = 5)
+    graphics::plot.new(); graphics::title(msg, cex.main = 1.2)
+    grDevices::dev.off()
+  } else if (endsWith(path, ".png")) {
+    grDevices::png(path, width = 800, height = 500, res = 96)
+    graphics::plot.new(); graphics::title(msg)
+    grDevices::dev.off()
+  }
+}
+
 if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
   library(microbiomeMarker)
   library(phyloseq)
 
-  otu <- otu_table(as.matrix(tab_final), taxa_are_rows = TRUE)
-  sam <- sample_data(meta)
-  
-  # Create tax_table to satisfy microbiomeMarker requirements
-  tax_mat <- as.matrix(data.frame(Taxon = rownames(tab_final), row.names = rownames(tab_final)))
+  # Build phyloseq with hierarchical tax_table.
+  # NOTE: tab_final row names ARE the SILVA taxonomy strings (pipe-separated),
+  # assigned during the step-2 group_by(TaxonomyGroup) collapse.
+  # They contain "|" which microbiomeMarker uses to detect a "summarized" ps
+  # (check_tax_summarize checks for "|" in OTU row names).  When ps is flagged
+  # as summarized, run_lefse only allows norm="CPM" — blocking norm="none".
+  # Fix: rename taxa to "taxon_N" before building the phyloseq.
+  asv_ids   <- rownames(tab_final)           # these ARE the taxonomy strings
+  new_names <- paste0("taxon_", seq_len(length(asv_ids)))
+  rownames(tab_final) <- new_names
+
+  otu     <- otu_table(as.matrix(tab_final), taxa_are_rows = TRUE)
+  sam     <- sample_data(meta)
+  tax_mat <- parse_silva_taxonomy(asv_ids, new_names)  # parse strings → use new_names as row IDs
   tax_tab <- tax_table(tax_mat)
-  
-  ps <- phyloseq(otu, sam, tax_tab)
+  ps      <- phyloseq(otu, sam, tax_tab)
 
-  message("Running LEfSe...")
-  mm <- tryCatch(
-    run_lefse(ps, group = group_col, 
-              multigrp_strat = TRUE, 
-              lda_cutoff = 2.0, 
-              wilcoxon_cutoff = 0.05),
-    error = function(e) { message("LEfSe failed: ", e$message); NULL }
+  # Filter to Bacteria only — removes Eukaryota/Archaea contamination that
+  # would otherwise dominate LEfSe results (e.g. Ascomycota fungal reads)
+  ps_bact <- tryCatch(
+    subset_taxa(ps, Kingdom == "Bacteria"),
+    error = function(e) { message("Bacteria filter failed: ", e$message); ps }
   )
-
-  if (!is.null(mm) && !is.null(marker_table(mm)) && nrow(marker_table(mm)) > 0) {
-    res_df <- marker_table(mm) %>% as.data.frame()
-    write.table(res_df, file.path(out_dir, "lefse_results.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
-
-    p_raw <- plot_ef_bar(mm) + theme_bw() + labs(title = "LEfSe Analysis (raw labels)")
-
-    # Cleaned plot: apply format_taxon_label to y-axis labels
-    # NOTE: ggplot passes the full label vector at once, so sapply() is required.
-    p_clean <- p_raw +
-      scale_y_discrete(labels = if (strategy != "none") function(x) sapply(x, format_taxon_label) else identity) +
-      labs(title = "LEfSe Analysis")
-
-    # Cleaned PDF (primary output)
-    pdf(file.path(out_dir, "lefse_plots.pdf"), width = 12, height = 8)
-    print(p_clean)
-    dev.off()
-
-    # Raw PDF (always written so Snakemake output is satisfied)
-    pdf(file.path(out_dir, "lefse_plots_raw.pdf"), width = 12, height = 8)
-    print(p_raw)
-    dev.off()
-
-    message("LEfSe complete.")
-    quit(save = "no", status = 0)
+  if (!is.null(ps_bact) && ntaxa(ps_bact) > 0) {
+    message("Filtered to Bacteria: ", ntaxa(ps_bact), " taxa (from ", ntaxa(ps), ")")
+    ps <- ps_bact
   }
+
+  dark_col_lf <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
+                   "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
+
+  # ── Run LEfSe at one taxonomic level and return panels ────────────────────
+  run_and_plot_level <- function(ps_in, rank_name) {
+    message("LEfSe at ", rank_name, " level ...")
+    ps_glom <- tryCatch(
+      tax_glom(ps_in, taxrank = rank_name, NArm = TRUE),
+      error = function(e) { message("tax_glom failed: ", e$message); NULL }
+    )
+    if (is.null(ps_glom)) return(NULL)
+    message("  After glom: ", ntaxa(ps_glom), " taxa")
+
+    # multigrp_strat must be FALSE for 2-group comparisons —
+    # TRUE triggers a known microbiomeMarker "In index: 1" crash
+    n_groups <- length(unique(get_variable(ps_glom, group_col)))
+    use_multigrp <- n_groups > 2
+
+    mm <- tryCatch(
+      run_lefse(ps_glom, group = group_col,
+                multigrp_strat = use_multigrp, lda_cutoff = 2.0,
+                wilcoxon_cutoff = 0.05, norm = "none"),
+      error = function(e) { message("run_lefse failed: ", e$message); NULL }
+    )
+    n_markers <- tryCatch({
+      mt <- marker_table(mm); if (is.null(mt)) 0L else nrow(mt)
+    }, error = function(e) 0L)
+    # If strict thresholds find nothing, retry with relaxed thresholds
+    if (n_markers == 0L) {
+      message("  No markers at LDA>=2.0 / p<0.05; retrying with LDA>=1.5 / p<0.1 ...")
+      mm <- tryCatch(
+        run_lefse(ps_glom, group = group_col,
+                  multigrp_strat = use_multigrp, lda_cutoff = 1.5,
+                  wilcoxon_cutoff = 0.10, norm = "none"),
+        error = function(e) { message("run_lefse (relaxed) failed: ", e$message); NULL }
+      )
+      n_markers <- tryCatch({
+        mt <- marker_table(mm); if (is.null(mt)) 0L else nrow(mt)
+      }, error = function(e) 0L)
+    }
+    if (n_markers == 0L) {
+      message("No significant markers at ", rank_name, " level.")
+      return(NULL)
+    }
+
+    res_df         <- as.data.frame(marker_table(mm))
+    res_df$lda_abs <- abs(res_df$ef_lda)
+    enrich_groups  <- sort(unique(res_df$enrich_group))
+    enrich_colors  <- setNames(dark_col_lf[seq_along(enrich_groups)], enrich_groups)
+
+    # Panel B: LDA bar chart (group-colored, no sample labels)
+    p_bar <- ggplot(res_df,
+                    aes(x = reorder(feature, lda_abs), y = lda_abs,
+                        fill = enrich_group)) +
+      geom_col(color = "grey20", linewidth = 0.35, alpha = 0.90) +
+      coord_flip() +
+      scale_fill_manual(values = enrich_colors, name = "Enriched in") +
+      theme_classic(base_size = 12) +
+      theme(
+        legend.position = "bottom",
+        legend.title    = element_text(face = "bold", size = 12),
+        legend.text     = element_text(face = "bold", size = 11),
+        axis.title      = element_text(face = "bold", size = 12),
+        axis.text       = element_text(face = "bold", size = 10, color = "black"),
+        plot.title      = element_text(face = "bold", size = 13),
+        axis.line       = element_line(linewidth = 0.6)
+      ) +
+      labs(x = NULL, y = "LDA Score (log10)",
+           title = paste("LDA Scores \u2014", rank_name))
+
+    # Panel A: circular cladogram (group-colored nodes, no sample labels)
+    p_clad <- tryCatch({
+      plot_cladogram(mm, color = group_col, only_marker = TRUE,
+                     clade_label_level = 4) +
+        theme(
+          legend.position = "bottom",
+          legend.title    = element_text(face = "bold", size = 12),
+          legend.text     = element_text(face = "bold", size = 11),
+          plot.title      = element_text(face = "bold", size = 13)
+        ) +
+        labs(title = paste("Cladogram \u2014", rank_name))
+    }, error = function(e) {
+      message("plot_cladogram failed at ", rank_name, ": ", e$message)
+      NULL
+    })
+
+    list(mm = mm, res_df = res_df, bar = p_bar, clad = p_clad)
+  }
+
+  # ── Save multi-panel for one level ────────────────────────────────────────
+  save_level <- function(panels, rank_name) {
+    fname_base <- file.path(out_dir,
+                            paste0("lefse_", tolower(rank_name), "_plots"))
+    if (is.null(panels)) {
+      ensure_file(paste0(fname_base, ".pdf"),
+                  paste("No significant LEfSe markers at", rank_name, "level"))
+      ensure_file(paste0(fname_base, ".png"),
+                  paste("No significant LEfSe markers at", rank_name, "level"))
+      return(invisible(NULL))
+    }
+    pieces <- Filter(Negate(is.null), list(panels$clad, panels$bar))
+
+    if (length(pieces) >= 2 && requireNamespace("patchwork", quietly = TRUE)) {
+      library(patchwork)
+      combined <- patchwork::wrap_plots(pieces, ncol = 2, widths = c(1.1, 0.9)) +
+        patchwork::plot_annotation(
+          tag_levels = "A",
+          title      = paste("LEfSe Analysis \u2014", rank_name, "Level"),
+          theme      = theme(plot.title = element_text(face = "bold", size = 15,
+                                                       hjust = 0.5))
+        ) +
+        patchwork::plot_layout(guides = "collect") &
+        theme(legend.position = "bottom")
+    } else {
+      combined <- if (length(pieces) > 0) pieces[[length(pieces)]] else NULL
+    }
+
+    if (!is.null(combined)) {
+      grDevices::pdf(paste0(fname_base, ".pdf"), width = 16, height = 9)
+      print(combined)
+      grDevices::dev.off()
+      ggplot2::ggsave(paste0(fname_base, ".png"), plot = combined,
+                      width = 16, height = 9, units = "in", dpi = 600)
+    } else {
+      ensure_file(paste0(fname_base, ".pdf"))
+      ensure_file(paste0(fname_base, ".png"))
+    }
+    message("Saved: lefse_", tolower(rank_name), "_plots.pdf / .png")
+  }
+
+  # Run at both taxonomic levels
+  lvl_phylum <- run_and_plot_level(ps, "Phylum")
+  lvl_genus  <- run_and_plot_level(ps, "Genus")
+
+  save_level(lvl_phylum, "Phylum")
+  save_level(lvl_genus,  "Genus")
+
+  # Combined results TSV (all levels)
+  res_all <- list()
+  if (!is.null(lvl_phylum)) { r <- lvl_phylum$res_df; r$level <- "Phylum"; res_all$p <- r }
+  if (!is.null(lvl_genus))  { r <- lvl_genus$res_df;  r$level <- "Genus";  res_all$g <- r }
+  if (length(res_all) > 0) {
+    write.table(do.call(rbind, res_all),
+                file.path(out_dir, "lefse_results.tsv"),
+                sep = "\t", quote = FALSE, row.names = FALSE)
+  } else {
+    write.table(data.frame(Note = "No significant LEfSe markers found"),
+                file.path(out_dir, "lefse_results.tsv"),
+                sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+
+  # Backward-compat: lefse_plots.pdf = genus-level (fallback to phylum)
+  genus_pdf <- file.path(out_dir, "lefse_genus_plots.pdf")
+  main_pdf  <- file.path(out_dir, "lefse_plots.pdf")
+  src_pdf   <- if (file.exists(genus_pdf)) genus_pdf else
+               file.path(out_dir, "lefse_phylum_plots.pdf")
+  if (file.exists(src_pdf)) {
+    file.copy(src_pdf, main_pdf, overwrite = TRUE)
+  } else {
+    ensure_file(main_pdf, "No significant LEfSe markers")
+  }
+  file.copy(main_pdf, file.path(out_dir, "lefse_plots_raw.pdf"), overwrite = TRUE)
+
+  message("LEfSe analysis complete.")
+  quit(save = "no", status = 0)
 }
 
 # ── 5. Fallback Analysis ─────────────────────────────────────────────────────
@@ -165,3 +356,23 @@ dev.off()
 pdf(file.path(out_dir, "lefse_plots.pdf"), width = 10, height = 6)
 if (nrow(top_sig) > 0) print(make_kw_plot(top_sig, clean = TRUE))
 dev.off()
+
+# Placeholder level-specific files required by Snakemake output declarations
+ensure_file_fallback <- function(path, msg) {
+  if (!file.exists(path)) {
+    if (endsWith(path, ".pdf")) {
+      grDevices::pdf(path, width = 8, height = 5)
+      graphics::plot.new(); graphics::title(msg, cex.main = 1.0)
+      grDevices::dev.off()
+    } else if (endsWith(path, ".png")) {
+      grDevices::png(path, width = 800, height = 500, res = 96)
+      graphics::plot.new(); graphics::title(msg)
+      grDevices::dev.off()
+    }
+  }
+}
+fb_msg <- "microbiomeMarker unavailable \u2014 using Kruskal-Wallis fallback"
+ensure_file_fallback(file.path(out_dir, "lefse_phylum_plots.pdf"), fb_msg)
+ensure_file_fallback(file.path(out_dir, "lefse_phylum_plots.png"), fb_msg)
+ensure_file_fallback(file.path(out_dir, "lefse_genus_plots.pdf"),  fb_msg)
+ensure_file_fallback(file.path(out_dir, "lefse_genus_plots.png"),  fb_msg)

@@ -159,4 +159,12 @@ write_composition_pdf(file.path(out_dir, "composition_plots_raw.pdf"), cleaned =
 # Cleaned PDF (format_taxon_label applied)
 write_composition_pdf(file.path(out_dir, "composition_plots.pdf"), cleaned = TRUE)
 
-message("Saved: composition_plots.pdf and composition_plots_raw.pdf")
+# Save cleaned barplots as 600 DPI PNG (one per taxonomy level)
+for (lvl in names(levels_data)) {
+  df_plot <- collapse_other(levels_data[[lvl]], top_n = 15)
+  p_png   <- make_barplot(df_plot, meta, group_col, lvl, cleaned = TRUE)
+  ggsave(file.path(out_dir, paste0("composition_", tolower(lvl), ".png")),
+         plot = p_png, width = 16, height = 8, units = "in", dpi = 600)
+  message("Saved: composition_", tolower(lvl), ".png (600 DPI)")
+}
+message("Saved: composition_plots.pdf, composition_plots_raw.pdf, and per-level PNGs (600 DPI)")

@@ -119,11 +119,16 @@ rule r_tree_plots:
         metadata_tsv = config["metadata_file"],
         # LEfSe results are optional — script handles missing file gracefully
     output:
-        plot01 = f"{OUT_VIZ}/phylogeny/01_tree_basic.pdf",
-        plot02 = f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.pdf",
-        plot03 = f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.pdf",
-        plot04 = f"{OUT_VIZ}/phylogeny/04_tree_differential.pdf",
-        plot05 = f"{OUT_VIZ}/phylogeny/05_tree_circular.pdf",
+        plot01     = f"{OUT_VIZ}/phylogeny/01_tree_basic.pdf",
+        plot02     = f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.pdf",
+        plot03     = f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.pdf",
+        plot04     = f"{OUT_VIZ}/phylogeny/04_tree_differential.pdf",
+        plot05     = f"{OUT_VIZ}/phylogeny/05_tree_circular.pdf",
+        plot01_png = f"{OUT_VIZ}/phylogeny/01_tree_basic.png",
+        plot02_png = f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.png",
+        plot03_png = f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.png",
+        plot04_png = f"{OUT_VIZ}/phylogeny/04_tree_differential.png",
+        plot05_png = f"{OUT_VIZ}/phylogeny/05_tree_circular.png",
     params:
         group_col = config["analysis"]["group_column"],
         lefse_tsv = f"{OUT}/differential/lefse_results.tsv",

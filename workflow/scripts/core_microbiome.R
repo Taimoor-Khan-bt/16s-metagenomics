@@ -11,7 +11,7 @@ suppressPackageStartupMessages({
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 6) {
-  stop("Usage: core_microbiome.R <table_tsv> <taxonomy_tsv> <metadata> <group_col> <prevalence> <out_dir>")
+  stop("Usage: core_microbiome.R <table_tsv> <taxonomy_tsv> <metadata> <group_col> <prevalence> <out_dir> [tax_level]")
 }
 
 table_tsv  <- args[1]
@@ -20,6 +20,7 @@ meta_file  <- args[3]
 group_col  <- args[4]
 prevalence <- as.numeric(args[5])
 out_dir    <- args[6]
+tax_level  <- if (length(args) >= 7 && nchar(trimws(args[7])) > 0) args[7] else "ASV"
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -101,7 +102,8 @@ if (length(all_core_ids) > 0) {
   })
   
   stats_df <- do.call(rbind, stats_rows)
-  stats_df$p_adj <- p.adjust(stats_df$p_value, method = "BH")
+  stats_df$p_adj     <- p.adjust(stats_df$p_value, method = "BH")
+  stats_df$tax_level <- tax_level
   write.table(stats_df, file.path(out_dir, "core_stats.tsv"), 
               sep = "\t", quote = FALSE, row.names = FALSE)
 } else {
@@ -201,6 +203,7 @@ if (exists("stats_df") && nrow(stats_df) > 0) {
          title = paste("Core Microbiome Prevalence by", group_col),
          subtitle = paste0("Taxa present in \u2265", prevalence * 100,
                            "% of samples in at least one group  |  ",
+                           "Taxonomy level: ", tax_level, "  |  ",
                            sum(!is.na(stats_df$p_adj) & stats_df$p_adj < 0.05),
                            " taxa with p_adj < 0.05"))
   print(p1)
@@ -217,3 +220,9 @@ if (requireNamespace("UpSetR", quietly = TRUE) && length(grp_levels) > 1) {
 }
 
 dev.off()
+if (exists("p1")) {
+  ggsave(file.path(out_dir, "core_plots.png"),
+         plot = p1, width = 13, height = 8, units = "in", dpi = 600)
+  message("Saved: core_plots.png (600 DPI)")
+}
+message("Saved: core_plots.pdf")

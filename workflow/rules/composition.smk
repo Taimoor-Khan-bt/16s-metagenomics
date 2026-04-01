@@ -177,8 +177,11 @@ rule r_composition_plots:
         genus_tsv  = f"{_COMP}/6_relfreq.tsv",
         metadata   = config["metadata_file"],
     output:
-        plots     = f"{OUT_VIZ}/composition/composition_plots.pdf",
-        plots_raw = f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
+        plots      = f"{OUT_VIZ}/composition/composition_plots.pdf",
+        plots_raw  = f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
+        phylum_png = f"{OUT_VIZ}/composition/composition_phylum.png",
+        class_png  = f"{OUT_VIZ}/composition/composition_class.png",
+        genus_png  = f"{OUT_VIZ}/composition/composition_genus.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
@@ -202,4 +205,7 @@ rule r_composition_plots:
             2>&1 | tee {log}
         mv '{params.out_dir}/composition_plots.pdf'     '{output.plots}'
         mv '{params.out_dir}/composition_plots_raw.pdf' '{output.plots_raw}'
+        mv '{params.out_dir}/composition_phylum.png'    '{output.phylum_png}'
+        mv '{params.out_dir}/composition_class.png'     '{output.class_png}'
+        mv '{params.out_dir}/composition_genus.png'     '{output.genus_png}'
         """

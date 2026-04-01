@@ -69,9 +69,11 @@ rule r_picrust2_differential:
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv",
         metadata = config["metadata_file"],
     output:
-        results   = f"{_PICRUST}/pathway_differential.tsv",
-        plots     = f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
-        plots_raw = f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
+        results       = f"{_PICRUST}/pathway_differential.tsv",
+        plots         = f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        plots_raw     = f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
+        plots_png     = f"{OUT_VIZ}/picrust2/pathway_plots.png",
+        plots_raw_png = f"{OUT_VIZ}/picrust2/pathway_plots_raw.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
@@ -93,4 +95,6 @@ rule r_picrust2_differential:
             2>&1 | tee {log}
         mv '{params.out_dir}/pathway_plots.pdf'     '{output.plots}'
         mv '{params.out_dir}/pathway_plots_raw.pdf' '{output.plots_raw}'
+        mv '{params.out_dir}/pathway_plots.png'     '{output.plots_png}'
+        mv '{params.out_dir}/pathway_plots_raw.png' '{output.plots_raw_png}'
         """

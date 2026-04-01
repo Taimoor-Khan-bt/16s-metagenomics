@@ -121,18 +121,23 @@ rule export_ancombc:
 
 rule r_lefse:
     """
-    LEfSe (Linear Discriminant Analysis Effect Size) differential analysis.
-    Uses R package microbiomeMarker as the backend.
+    LEfSe differential analysis at Phylum and Genus levels.
+    Each level: multi-panel plot (A: circular cladogram, B: LDA score bar).
+    Uses microbiomeMarker with hierarchical SILVA taxonomy parsing.
+    Fallback to Kruskal-Wallis if microbiomeMarker is unavailable.
     """
     input:
-        # Use filtered table (mito/chloro/unassigned removed) for LEfSe
         table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
         taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv",
         metadata  = config["metadata_file"],
     output:
-        results   = f"{_DIFF}/lefse_results.tsv",
-        plots     = f"{OUT_VIZ}/differential/lefse_plots.pdf",
-        plots_raw = f"{OUT_VIZ}/differential/lefse_plots_raw.pdf",
+        results          = f"{_DIFF}/lefse_results.tsv",
+        plots            = f"{OUT_VIZ}/differential/lefse_plots.pdf",
+        plots_raw        = f"{OUT_VIZ}/differential/lefse_plots_raw.pdf",
+        phylum_plots     = f"{OUT_VIZ}/differential/lefse_phylum_plots.pdf",
+        phylum_plots_png = f"{OUT_VIZ}/differential/lefse_phylum_plots.png",
+        genus_plots      = f"{OUT_VIZ}/differential/lefse_genus_plots.pdf",
+        genus_plots_png  = f"{OUT_VIZ}/differential/lefse_genus_plots.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
@@ -153,6 +158,10 @@ rule r_lefse:
             '{params.strategy}' \
             '{params.dual_plots}' \
             2>&1 | tee {log}
-        mv '{params.out_dir}/lefse_plots.pdf'     '{output.plots}'
-        mv '{params.out_dir}/lefse_plots_raw.pdf' '{output.plots_raw}'
+        mv '{params.out_dir}/lefse_plots.pdf'          '{output.plots}'
+        mv '{params.out_dir}/lefse_plots_raw.pdf'      '{output.plots_raw}'
+        mv '{params.out_dir}/lefse_phylum_plots.pdf'   '{output.phylum_plots}'
+        mv '{params.out_dir}/lefse_phylum_plots.png'   '{output.phylum_plots_png}'
+        mv '{params.out_dir}/lefse_genus_plots.pdf'    '{output.genus_plots}'
+        mv '{params.out_dir}/lefse_genus_plots.png'    '{output.genus_plots_png}'
         """

@@ -117,8 +117,7 @@ rule all_extended:
         rules.all.input,
         # ─ A: Alpha diversity statistics ──────────────────────────────────
         f"{OUT}/stats/alpha/alpha_statistics.tsv",
-        f"{OUT_VIZ}/diversity/alpha_plots.pdf",
-        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
+        f"{OUT_VIZ}/diversity/alpha_plots.pdf",        f"{OUT_VIZ}/diversity/alpha_plots.png",        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
                metric=ALPHA_METRICS),
         # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────
         expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
@@ -127,10 +126,14 @@ rule all_extended:
                beta_metric=["bray_curtis", "weighted_unifrac"]),
         f"{OUT}/stats/beta/permanova_results.tsv",
         f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
+        f"{OUT_VIZ}/diversity/pcoa_plots.png",
         # ─ C: Composition analysis ─────────────────────────────────────────
         expand(f"{OUT}/composition/{{level}}_relfreq.tsv", level=COLLAPSE_LEVELS),
         expand(f"{OUT_VIZ}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),
         f"{OUT_VIZ}/composition/composition_plots.pdf",
+        f"{OUT_VIZ}/composition/composition_phylum.png",
+        f"{OUT_VIZ}/composition/composition_class.png",
+        f"{OUT_VIZ}/composition/composition_genus.png",
         *_KRONA_HTMLS,
         # ─ D: Differential abundance ──────────────────────────────────────
         expand(f"{OUT_VIZ}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
@@ -138,18 +141,30 @@ rule all_extended:
         expand(f"{OUT}/differential/ancombc_level{{level}}.tsv", level=ANCOMBC_LEVELS),
         f"{OUT}/differential/lefse_results.tsv",
         f"{OUT_VIZ}/differential/lefse_plots.pdf",
+        f"{OUT_VIZ}/differential/lefse_phylum_plots.pdf",
+        f"{OUT_VIZ}/differential/lefse_phylum_plots.png",
+        f"{OUT_VIZ}/differential/lefse_genus_plots.pdf",
+        f"{OUT_VIZ}/differential/lefse_genus_plots.png",
         # ─ E: Core microbiome ─────────────────────────────────────────────
         f"{OUT_VIZ}/core_microbiome/core_features.qzv",
         f"{OUT}/core_microbiome/core_stats.tsv",
         f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
+        f"{OUT_VIZ}/core_microbiome/core_plots.png",
         # ─ G: PICRUSt2 functional prediction ─────────────────────────────
         f"{OUT}/picrust2/pathway_differential.tsv",
         f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        f"{OUT_VIZ}/picrust2/pathway_plots.png",
+        f"{OUT_VIZ}/picrust2/pathway_plots_raw.png",
         # ─ H: Phylogenetic tree visualizations (ggtree) ───────────────────
         f"{OUT_VIZ}/phylogeny/01_tree_basic.pdf",
         f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.pdf",
         f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.pdf",
         f"{OUT_VIZ}/phylogeny/04_tree_differential.pdf",
         f"{OUT_VIZ}/phylogeny/05_tree_circular.pdf",
+        f"{OUT_VIZ}/phylogeny/01_tree_basic.png",
+        f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.png",
+        f"{OUT_VIZ}/phylogeny/03_tree_phylum_colorstrip.png",
+        f"{OUT_VIZ}/phylogeny/04_tree_differential.png",
+        f"{OUT_VIZ}/phylogeny/05_tree_circular.png",
         # ─ Dual raw-label PDFs (only when taxa_processing.generate_dual_plots: true)
         *_DUAL_PLOT_OUTPUTS,

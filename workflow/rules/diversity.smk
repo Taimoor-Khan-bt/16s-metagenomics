@@ -81,6 +81,36 @@ rule core_diversity:
 
 # ── Step 10: Alpha diversity correlation (works with any sample size) ──────────
 
+# ── Alpha diversity extra metrics ────────────────────────────────────────────
+# Metrics not produced by core-metrics-phylogenetic (e.g. simpson, chao1).
+# Uses the rarefied table already produced by core_diversity.
+# ruleorder ensures core_diversity's fixed outputs take priority over this wildcard.
+ruleorder: core_diversity > alpha_extra
+
+rule alpha_extra:
+    """
+    Compute alpha diversity metrics not included in core-metrics-phylogenetic
+    (e.g. simpson, chao1). Requires the rarefied table from core_diversity.
+    """
+    input:
+        table = f"{_CORE_DIV}/rarefied_table.qza",
+    output:
+        vector = f"{_CORE_DIV}/{{metric}}_vector.qza",
+    params:
+        docker = DOCKER,
+    log:
+        f"{OUT}/logs/alpha_extra_{{metric}}.log",
+    shell:
+        """
+        mkdir -p $(dirname {log})
+        {params.docker} qiime diversity alpha \
+            --i-table           '{input.table}' \
+            --p-metric          {wildcards.metric} \
+            --o-alpha-diversity '{output.vector}' \
+            2>&1 | tee {log}
+        """
+
+
 rule alpha_correlation:
     """
     Compute Spearman correlation between alpha diversity and numeric metadata

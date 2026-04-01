@@ -102,10 +102,10 @@ rule export_distance_matrix:
 rule r_alpha_stats:
     """
     R: Wilcoxon rank-sum test + GLM (covariate adjustment) for alpha diversity.
-    Outputs: TSV statistics table + violin/boxplot PDF.
+    Outputs: TSV statistics + multi-panel bar chart PDF + 600 DPI PNG.
 
-    R packages: ggplot2, ggpubr, dplyr, tidyr, broom
-    Install: mamba install -n qiime2 -c conda-forge r-ggplot2 r-ggpubr r-dplyr r-tidyr r-broom
+    R packages: ggplot2, dplyr, tidyr, broom, patchwork
+    Install: mamba install -n qiime2 -c conda-forge r-ggplot2 r-dplyr r-tidyr r-broom r-patchwork
     """
     input:
         alpha_tsvs = expand(
@@ -114,8 +114,9 @@ rule r_alpha_stats:
         ),
         metadata  = config["metadata_file"],
     output:
-        stats = f"{_STATS}/alpha/alpha_statistics.tsv",
-        plots = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        stats     = f"{_STATS}/alpha/alpha_statistics.tsv",
+        plots     = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        plots_png = f"{OUT_VIZ}/diversity/alpha_plots.png",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
@@ -135,26 +136,28 @@ rule r_alpha_stats:
             '{params.out_dir}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/alpha_plots.pdf' '{output.plots}'
+        mv '{params.out_dir}/alpha_plots.png' '{output.plots_png}'
         """
 
 
 
 rule r_beta_stats:
     """
-    R: CLR-transformed PCoA + vegan::adonis2 PERMANOVA with covariates.
-    Outputs: PERMANOVA results TSV + PCoA plots PDF.
+    R: CLR PCoA + PERMANOVA + Bray-Curtis dissimilarity boxplot.
+    Outputs: PERMANOVA results TSV + multi-panel PCoA PDF + 600 DPI PNG.
 
-    R packages: vegan, ggplot2, compositions, ape, dplyr
-    Install: mamba install -n qiime2 -c conda-forge r-vegan r-ggplot2 r-compositions r-ape r-dplyr
+    R packages: vegan, ggplot2, ape, dplyr, patchwork
+    Install: mamba install -n qiime2 -c conda-forge r-vegan r-ggplot2 r-ape r-dplyr r-patchwork
     """
     input:
-        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",  # filtered
-        metadata  = config["metadata_file"],
-        bray_dm   = f"{_STATS}/beta/bray_curtis_distance_matrix.tsv",
+        table_tsv   = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
+        metadata    = config["metadata_file"],
+        bray_dm     = f"{_STATS}/beta/bray_curtis_distance_matrix.tsv",
         wunifrac_dm = f"{_STATS}/beta/weighted_unifrac_distance_matrix.tsv",
     output:
         permanova = f"{_STATS}/beta/permanova_results.tsv",
         plots     = f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
+        plots_png = f"{OUT_VIZ}/diversity/pcoa_plots.png",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
@@ -175,6 +178,7 @@ rule r_beta_stats:
             '{params.out_dir}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/pcoa_plots.pdf' '{output.plots}'
+        mv '{params.out_dir}/pcoa_plots.png' '{output.plots_png}'
         """
 
 
@@ -208,18 +212,20 @@ rule core_features:
 rule r_core_microbiome:
     """
     R: Chi-square / Fisher exact test comparing core taxa between groups.
-    Outputs: TSV stats table + Venn/UpSet plot PDF.
+    Outputs: TSV stats table (with tax_level column) + prevalence barplot + UpSetR PDF.
     """
     input:
-        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",  # filtered
+        table_tsv = f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
         taxonomy  = f"{OUT}/exported/taxonomy/taxonomy.tsv",
         metadata  = config["metadata_file"],
     output:
-        stats = f"{_CORE}/core_stats.tsv",
-        plots = f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
+        stats     = f"{_CORE}/core_stats.tsv",
+        plots     = f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
+        plots_png = f"{OUT_VIZ}/core_microbiome/core_plots.png",
     params:
         group_col  = config["analysis"]["group_column"],
         prevalence = config["analysis"]["core_prevalence"],
+        tax_level  = config.get("analysis", {}).get("core_taxonomy_level", "ASV"),
         out_dir    = _CORE,
         viz_dir    = f"{OUT_VIZ}/core_microbiome",
     log:
@@ -234,6 +240,8 @@ rule r_core_microbiome:
             '{params.group_col}' \
             '{params.prevalence}' \
             '{params.out_dir}' \
+            '{params.tax_level}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/core_plots.pdf' '{output.plots}'
+        [ -f '{params.out_dir}/core_plots.png' ] && mv '{params.out_dir}/core_plots.png' '{output.plots_png}' || touch '{output.plots_png}'
         """

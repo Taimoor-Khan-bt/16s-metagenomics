@@ -53,6 +53,13 @@ save_plot <- function(p, path, w = 14, h = 20) {
     error = function(e)
       message("[Tree] WARN: could not save ", basename(path), ": ", e$message)
   )
+  png_path <- sub("\\.pdf$", ".png", path)
+  tryCatch(
+    ggsave(png_path, plot = p, width = w, height = h,
+           units = "in", dpi = 600, limitsize = FALSE),
+    error = function(e)
+      message("[Tree] WARN: could not save ", basename(png_path), ": ", e$message)
+  )
   cat("[Tree] Saved:", path, "\n")
 }
 
