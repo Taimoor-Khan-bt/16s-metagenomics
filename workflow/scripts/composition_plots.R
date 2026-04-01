@@ -115,11 +115,13 @@ make_barplot <- function(df, meta, group_col, level_name, cleaned = TRUE) {
     scale_fill_manual(values = cols) +
     scale_y_continuous(labels = percent_format(), expand = c(0,0)) +
     theme_minimal(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 7),
+    theme(axis.text.x  = element_blank(),   # hide individual sample names
+          axis.ticks.x = element_blank(),
           panel.spacing = unit(0.2, "lines"),
+          strip.text    = element_text(face = "bold", size = 11),
           strip.background = element_rect(fill = "grey90", color = NA)) +
-    labs(title = paste("Composition:", level_name), 
-         x = "Samples", y = "Relative Abundance", fill = level_name)
+    labs(title = paste("Composition:", level_name),
+         x = group_col, y = "Relative Abundance", fill = level_name)
 }
 
 # ── 5. Run Execution ──────────────────────────────────────────────────────────
