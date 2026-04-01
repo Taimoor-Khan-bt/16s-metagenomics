@@ -31,7 +31,19 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 meta <- read.table(metadata_file, header = TRUE, sep = "\t",
                    comment.char = "", row.names = 1, check.names = FALSE)
 
-metrics <- c("faith_pd", "shannon", "evenness", "observed_features")
+# Discover all exported alpha diversity metrics dynamically so that
+# metrics added in config (e.g. simpson, chao1) are automatically included.
+metrics <- basename(
+  list.dirs(alpha_dir, full.names = TRUE, recursive = FALSE)
+)[file.exists(file.path(
+  list.dirs(alpha_dir, full.names = TRUE, recursive = FALSE),
+  "alpha-diversity.tsv"
+))]
+if (length(metrics) == 0) {
+  # Fallback to known defaults if directory scan fails
+  metrics <- c("faith_pd", "shannon", "evenness", "observed_features")
+}
+message("Alpha metrics found: ", paste(metrics, collapse = ", "))
 alpha_list <- list()
 
 for (m in metrics) {
