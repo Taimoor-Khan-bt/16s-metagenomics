@@ -117,7 +117,7 @@ rule all_extended:
         rules.all.input,
         # ─ A: Alpha diversity statistics ──────────────────────────────────
         f"{OUT}/stats/alpha/alpha_statistics.tsv",
-        f"{OUT_VIZ}/diversity/alpha_plots.pdf",        f"{OUT_VIZ}/diversity/alpha_plots.png",        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
+        f"{OUT_VIZ}/diversity/alpha_plots.pdf",        f"{OUT_VIZ}/diversity/alpha_plots.png",        f"{OUT_VIZ}/diversity/alpha_plots_glm.png",        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
                metric=ALPHA_METRICS),
         # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────
         expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",

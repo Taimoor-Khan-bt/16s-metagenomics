@@ -114,9 +114,10 @@ rule r_alpha_stats:
         ),
         metadata  = config["metadata_file"],
     output:
-        stats     = f"{_STATS}/alpha/alpha_statistics.tsv",
-        plots     = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
-        plots_png = f"{OUT_VIZ}/diversity/alpha_plots.png",
+        stats        = f"{_STATS}/alpha/alpha_statistics.tsv",
+        plots        = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        plots_png    = f"{OUT_VIZ}/diversity/alpha_plots.png",
+        plots_glm_png = f"{OUT_VIZ}/diversity/alpha_plots_glm.png",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
@@ -137,6 +138,7 @@ rule r_alpha_stats:
             2>&1 | tee {log}
         mv '{params.out_dir}/alpha_plots.pdf' '{output.plots}'
         mv '{params.out_dir}/alpha_plots.png' '{output.plots_png}'
+        mv '{params.out_dir}/alpha_plots_glm.png' '{output.plots_glm_png}'
         """
 
 

@@ -257,6 +257,7 @@ if (n_panels > 0) {
     }
   }
 
+  forest_plot <- NULL
   if (length(glm_rows) > 0) {
     forest_df            <- do.call(rbind, glm_rows)
     forest_df$ci_lo      <- forest_df$estimate - 1.96 * forest_df$std_error
@@ -291,6 +292,7 @@ if (n_panels > 0) {
            subtitle = paste("Adjusted for:",
                             if (length(covariates) > 0) paste(covariates, collapse = ", ")
                             else "no covariates"))
+    forest_plot <- pf
     print(pf)
     message("GLM forest plot added to alpha_plots.pdf")
   } else {
@@ -300,11 +302,25 @@ if (n_panels > 0) {
   dev.off()
   message("Saved: alpha_plots.pdf")
 
-  # ── PNG (600 DPI) — bar chart panel only ──────────────────────────────────
+  # ── PNG (600 DPI) — bar chart panel ──────────────────────────────────────
   ggsave(file.path(out_dir, "alpha_plots.png"),
          plot = combined_plot,
          width = fig_w, height = 6, units = "in", dpi = 600)
   message("Saved: alpha_plots.png (600 DPI)")
+
+  # ── PNG (600 DPI) — GLM forest plot ───────────────────────────────────────
+  if (!is.null(forest_plot)) {
+    glm_w <- max(7, 1.5 * length(glm_rows))
+    ggsave(file.path(out_dir, "alpha_plots_glm.png"),
+           plot = forest_plot,
+           width = glm_w, height = 6, units = "in", dpi = 600)
+    message("Saved: alpha_plots_glm.png (600 DPI)")
+  } else {
+    # Placeholder so Snakemake output is always satisfied
+    grDevices::png(file.path(out_dir, "alpha_plots_glm.png"), width = 800, height = 500, res = 96)
+    graphics::plot.new(); graphics::title("No GLM data available")
+    grDevices::dev.off()
+  }
 
 } else {
   message("No metrics available for plotting — writing placeholder files")
