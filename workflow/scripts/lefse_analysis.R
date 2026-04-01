@@ -535,6 +535,7 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
       geom_text(
         data    = res_df[res_df$sig, , drop = FALSE],
         mapping = aes(x = ef_lda + sign(ef_lda) * 0.06,
+                      y = feature,
                       label = "*"),
         inherit.aes = FALSE,
         size = 4.5, color = "grey10", vjust = 0.5
