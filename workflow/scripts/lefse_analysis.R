@@ -154,6 +154,171 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
   dark_col_lf <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
                    "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
 
+  # ── Unconditional taxonomy cladogram (always produced) ─────────────────────
+  # Circular dendrogram: Kingdom → Phylum → Class → Order → Family → Genus.
+  # Nodes coloured by which group has higher mean abundance (Wilcoxon direction).
+  # Significant genera (p < 0.05) are labelled.  Runs regardless of whether
+  # any LEfSe markers pass the LDA threshold.
+  build_taxonomy_cladogram <- function(ps_in, group_col, out_path_base) {
+    tryCatch({
+      for (pkg in c("ape", "ggtree")) {
+        if (!requireNamespace(pkg, quietly = TRUE)) {
+          message("  Skipping taxonomy cladogram — missing package: ", pkg)
+          return(invisible(NULL))
+        }
+        suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+      }
+
+      # Glom to Genus to get one row per genus
+      ps_g <- tryCatch(
+        tax_glom(ps_in, taxrank = "Genus", NArm = TRUE),
+        error = function(e) ps_in
+      )
+      tax_mat <- as.data.frame(tax_table(ps_g))
+      otu_mat <- as.matrix(otu_table(ps_g))
+      if (!taxa_are_rows(ps_g)) otu_mat <- t(otu_mat)
+      meta_df  <- as.data.frame(sample_data(ps_g))
+      grp_vec  <- as.character(meta_df[[group_col]])
+      grp_levs <- sort(unique(na.omit(grp_vec)))
+
+      ranks_all <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+      ranks     <- ranks_all[ranks_all %in% colnames(tax_mat)]
+      if (length(ranks) < 2) {
+        message("  Not enough taxonomy ranks for cladogram"); return(invisible(NULL))
+      }
+
+      # Create safe Newick labels (alphanum + underscore only) and keep
+      # a display_map: safe_id → human-readable label for annotation.
+      tax_norm    <- tax_mat[, ranks, drop = FALSE]
+      display_map <- list()
+      for (ri in seq_along(ranks)) {
+        r   <- ranks[ri]
+        bad <- is.na(tax_norm[[r]]) | tax_norm[[r]] == "" |
+               grepl("unclassified|uncultured|unidentified|__NA",
+                     tax_norm[[r]], ignore.case = TRUE)
+        if (any(bad)) {
+          fill <- if (ri > 1) paste0("Unc_", tax_norm[[ranks[ri - 1]]][bad])
+                  else        "Unclassified"
+          tax_norm[[r]][bad] <- fill
+        }
+        display_vals <- tax_norm[[r]]
+        safe_vals    <- gsub("[^A-Za-z0-9_]", "_",
+                             paste0(substr(r, 1, 1), "_", display_vals))
+        tax_norm[[r]] <- safe_vals
+        for (j in seq_along(safe_vals)) {
+          display_map[[safe_vals[j]]] <- display_vals[j]
+        }
+      }
+      display_map[["Root"]] <- "Root"
+
+      # Build parent → children map (unique pairs at each rank transition)
+      pc <- list()
+      pc[["Root"]] <- unique(tax_norm[[ranks[1]]])
+      for (i in seq(2, length(ranks))) {
+        pairs <- unique(tax_norm[, c(ranks[i - 1], ranks[i]), drop = FALSE])
+        for (j in seq_len(nrow(pairs))) {
+          p  <- as.character(pairs[j, 1])
+          ch <- as.character(pairs[j, 2])
+          if (is.null(pc[[p]])) pc[[p]] <- character(0)
+          pc[[p]] <- unique(c(pc[[p]], ch))
+        }
+      }
+
+      # Recursive Newick serializer
+      to_nwk <- function(n) {
+        kids <- pc[[n]]
+        if (is.null(kids) || length(kids) == 0) return(n)
+        paste0("(", paste(vapply(kids, to_nwk, character(1)), collapse = ","), ")", n)
+      }
+      tr <- ape::read.tree(text = paste0(to_nwk("Root"), ";"))
+
+      # Wilcoxon enrichment per genus tip
+      tip_rank  <- ranks[length(ranks)]
+      tip_nodes <- unique(tax_norm[[tip_rank]])
+      enrich_v  <- setNames(rep(NA_character_, length(tip_nodes)), tip_nodes)
+      pval_v    <- setNames(rep(1.0,           length(tip_nodes)), tip_nodes)
+      if (length(grp_levs) >= 2) {
+        g1 <- which(grp_vec == grp_levs[1])
+        g2 <- which(grp_vec == grp_levs[2])
+        for (tip in tip_nodes) {
+          idx <- which(tax_norm[[tip_rank]] == tip)
+          if (length(idx) == 0) next
+          v  <- if (length(idx) == 1) as.numeric(otu_mat[idx, ])
+                else as.numeric(colSums(otu_mat[idx, , drop = FALSE]))
+          m1 <- mean(v[g1]); m2 <- mean(v[g2])
+          p  <- tryCatch(suppressWarnings(wilcox.test(v[g1], v[g2])$p.value),
+                         error = function(e) NA_real_)
+          enrich_v[tip] <- if (is.finite(m1) && is.finite(m2)) {
+            if (m1 >= m2) grp_levs[1] else grp_levs[2]
+          } else NA_character_
+          pval_v[tip] <- ifelse(is.na(p), 1.0, p)
+        }
+      }
+
+      # Tip annotation dataframe keyed on tree tip labels
+      tip_df <- data.frame(
+        label   = tr$tip.label,
+        enrich  = enrich_v[tr$tip.label],
+        sig     = !is.na(pval_v[tr$tip.label]) & pval_v[tr$tip.label] < 0.05,
+        display = vapply(tr$tip.label, function(n) {
+          lbl <- display_map[[n]]; if (is.null(lbl)) n else lbl
+        }, character(1)),
+        stringsAsFactors = FALSE
+      )
+      tip_df$sig[is.na(tip_df$sig)] <- FALSE
+      n_sig <- sum(tip_df$sig, na.rm = TRUE)
+      message("  Cladogram: ", length(tip_nodes), " genera, ", n_sig,
+              " significant (Wilcoxon p<0.05)")
+
+      grp_pal <- setNames(dark_col_lf[seq_along(grp_levs)], grp_levs)
+
+      p_clad <- ggtree(tr, layout = "circular", color = "grey70",
+                       linewidth = 0.35) %<+% tip_df +
+        geom_tippoint(aes(color = enrich), size = 1.8, alpha = 0.90,
+                      na.rm = TRUE) +
+        geom_tiplab(aes(label = ifelse(sig, display, NA_character_)),
+                    size = 2.2, offset = 1.5, align = FALSE, color = "black",
+                    fontface = "italic", na.rm = TRUE) +
+        ggplot2::scale_color_manual(
+          values       = grp_pal,
+          na.value     = "grey80",
+          name         = paste0("Higher mean in (", group_col, ")"),
+          na.translate = FALSE
+        ) +
+        ggplot2::theme_void() +
+        ggplot2::theme(
+          legend.position = "bottom",
+          legend.title    = ggplot2::element_text(face = "bold", size = 11),
+          legend.text     = ggplot2::element_text(face = "bold", size = 10),
+          plot.title      = ggplot2::element_text(face = "bold", size = 13,
+                                                  hjust = 0.5),
+          plot.caption    = ggplot2::element_text(size = 9, hjust = 0.5,
+                                                  color = "grey40"),
+          plot.margin     = ggplot2::margin(40, 40, 40, 40)
+        ) +
+        ggplot2::labs(
+          title   = paste0("Taxonomy Cladogram \u2014 ", group_col),
+          caption = paste0(length(tip_nodes), " genera  |  ",
+                           "node colour = group with higher mean abundance  |  ",
+                           "labelled: Wilcoxon p\u00a0<\u00a00.05")
+        )
+
+      grDevices::pdf(paste0(out_path_base, ".pdf"), width = 14, height = 14)
+      print(p_clad)
+      grDevices::dev.off()
+      ggplot2::ggsave(paste0(out_path_base, ".png"), plot = p_clad,
+                      width = 14, height = 14, units = "in", dpi = 600)
+      message("  Cladogram saved: ", basename(out_path_base), ".pdf / .png")
+    }, error = function(e) {
+      message("  Taxonomy cladogram failed: ", e$message)
+    })
+    invisible(NULL)
+  }
+
+  # Always produce the cladogram — regardless of LEfSe significance
+  build_taxonomy_cladogram(ps, group_col,
+                           file.path(out_dir, "lefse_cladogram"))
+
   # ── Run LEfSe at one taxonomic level and return panels ────────────────────
   run_and_plot_level <- function(ps_in, rank_name) {
     message("LEfSe at ", rank_name, " level ...")
@@ -376,3 +541,5 @@ ensure_file_fallback(file.path(out_dir, "lefse_phylum_plots.pdf"), fb_msg)
 ensure_file_fallback(file.path(out_dir, "lefse_phylum_plots.png"), fb_msg)
 ensure_file_fallback(file.path(out_dir, "lefse_genus_plots.pdf"),  fb_msg)
 ensure_file_fallback(file.path(out_dir, "lefse_genus_plots.png"),  fb_msg)
+ensure_file_fallback(file.path(out_dir, "lefse_cladogram.pdf"),    fb_msg)
+ensure_file_fallback(file.path(out_dir, "lefse_cladogram.png"),    fb_msg)

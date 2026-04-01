@@ -145,6 +145,8 @@ rule all_extended:
         f"{OUT_VIZ}/differential/lefse_phylum_plots.png",
         f"{OUT_VIZ}/differential/lefse_genus_plots.pdf",
         f"{OUT_VIZ}/differential/lefse_genus_plots.png",
+        f"{OUT_VIZ}/differential/lefse_cladogram.pdf",
+        f"{OUT_VIZ}/differential/lefse_cladogram.png",
         # ─ E: Core microbiome ─────────────────────────────────────────────
         f"{OUT_VIZ}/core_microbiome/core_features.qzv",
         f"{OUT}/core_microbiome/core_stats.tsv",

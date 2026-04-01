@@ -138,6 +138,8 @@ rule r_lefse:
         phylum_plots_png = f"{OUT_VIZ}/differential/lefse_phylum_plots.png",
         genus_plots      = f"{OUT_VIZ}/differential/lefse_genus_plots.pdf",
         genus_plots_png  = f"{OUT_VIZ}/differential/lefse_genus_plots.png",
+        cladogram_pdf    = f"{OUT_VIZ}/differential/lefse_cladogram.pdf",
+        cladogram_png    = f"{OUT_VIZ}/differential/lefse_cladogram.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
@@ -164,4 +166,6 @@ rule r_lefse:
         mv '{params.out_dir}/lefse_phylum_plots.png'   '{output.phylum_plots_png}'
         mv '{params.out_dir}/lefse_genus_plots.pdf'    '{output.genus_plots}'
         mv '{params.out_dir}/lefse_genus_plots.png'    '{output.genus_plots_png}'
+        mv '{params.out_dir}/lefse_cladogram.pdf'      '{output.cladogram_pdf}'
+        mv '{params.out_dir}/lefse_cladogram.png'      '{output.cladogram_png}'
         """
