@@ -154,172 +154,244 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
   dark_col_lf <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
                    "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
 
-  # ── Unconditional taxonomy cladogram (always produced) ─────────────────────
-  # Circular dendrogram: Kingdom → Phylum → Class → Order → Family → Genus.
-  # Nodes coloured by which group has higher mean abundance (Wilcoxon direction).
-  # Significant genera (p < 0.05) are labelled.  Runs regardless of whether
-  # any LEfSe markers pass the LDA threshold.
-  build_taxonomy_cladogram <- function(ps_in, group_col, out_path_base) {
+  # ── Colour palettes shared across all level plots ─────────────────────────
+  grp_levs_all  <- sort(unique(as.character(get_variable(ps, group_col))))
+  group_pal_all <- setNames(dark_col_lf[seq_along(grp_levs_all)], grp_levs_all)
+
+  # 15-colour palette for phyla (Okabe-Ito extended)
+  phylum_pal15 <- c(
+    "#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+    "#A65628","#F781BF","#999999","#1B9E77","#D95F02",
+    "#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D"
+  )
+
+  # ── Helper: build Newick tree + annotation frame from a phyloseq ──────────
+  # Returns list(tr, tip_df, display_map, tax_norm, ranks) or NULL on failure.
+  make_tree_data <- function(ps_in) {
+    tax_mat <- as.data.frame(tax_table(ps_in))
+    otu_mat <- as.matrix(otu_table(ps_in))
+    if (!taxa_are_rows(ps_in)) otu_mat <- t(otu_mat)
+    meta_df  <- as.data.frame(sample_data(ps_in))
+    grp_vec  <- as.character(meta_df[[group_col]])
+    grp_levs <- sort(unique(na.omit(grp_vec)))
+
+    ranks_all <- c("Kingdom","Phylum","Class","Order","Family","Genus")
+    ranks     <- ranks_all[ranks_all %in% colnames(tax_mat)]
+    if (length(ranks) < 2) return(NULL)
+
+    tax_norm    <- tax_mat[, ranks, drop = FALSE]
+    display_map <- list()
+    for (ri in seq_along(ranks)) {
+      r   <- ranks[ri]
+      bad <- is.na(tax_norm[[r]]) | tax_norm[[r]] == "" |
+             grepl("unclassified|uncultured|unidentified|__NA",
+                   tax_norm[[r]], ignore.case = TRUE)
+      if (any(bad)) {
+        fill <- if (ri > 1) paste0("Unc_", gsub("[^A-Za-z0-9]","_",
+                                                tax_norm[[ranks[ri-1]]][bad]))
+                else        "Unclassified"
+        tax_norm[[r]][bad] <- fill
+      }
+      display_vals <- tax_norm[[r]]
+      safe_vals    <- gsub("[^A-Za-z0-9_]","_",
+                           paste0(substr(r,1,1),"_", display_vals))
+      tax_norm[[r]] <- safe_vals
+      for (j in seq_along(safe_vals)) display_map[[safe_vals[j]]] <- display_vals[j]
+    }
+    display_map[["Root"]] <- "Root"
+
+    pc <- list(); pc[["Root"]] <- unique(tax_norm[[ranks[1]]])
+    for (i in seq(2, length(ranks))) {
+      pairs <- unique(tax_norm[, c(ranks[i-1], ranks[i]), drop=FALSE])
+      for (j in seq_len(nrow(pairs))) {
+        p <- as.character(pairs[j,1]); ch <- as.character(pairs[j,2])
+        if (is.null(pc[[p]])) pc[[p]] <- character(0)
+        pc[[p]] <- unique(c(pc[[p]], ch))
+      }
+    }
+    to_nwk <- function(n) {
+      kids <- pc[[n]]
+      if (is.null(kids)||length(kids)==0) return(n)
+      paste0("(", paste(vapply(kids,to_nwk,character(1)),collapse=","), ")", n)
+    }
+    tr <- tryCatch(ape::read.tree(text=paste0(to_nwk("Root"),";")),
+                   error=function(e) NULL)
+    if (is.null(tr)) return(NULL)
+
+    tip_rank  <- ranks[length(ranks)]
+    tip_nodes <- unique(tax_norm[[tip_rank]])
+    enrich_v  <- setNames(rep(NA_character_, length(tip_nodes)), tip_nodes)
+    pval_v    <- setNames(rep(1.0,           length(tip_nodes)), tip_nodes)
+    abund_v   <- setNames(rep(0.0,           length(tip_nodes)), tip_nodes)
+    if (length(grp_levs) >= 2) {
+      g1 <- which(grp_vec == grp_levs[1]); g2 <- which(grp_vec == grp_levs[2])
+      for (tip in tip_nodes) {
+        idx <- which(tax_norm[[tip_rank]] == tip)
+        if (!length(idx)) next
+        v  <- if (length(idx)==1) as.numeric(otu_mat[idx,])
+              else as.numeric(colSums(otu_mat[idx,,drop=FALSE]))
+        abund_v[tip] <- mean(v)
+        m1 <- mean(v[g1]); m2 <- mean(v[g2])
+        p  <- tryCatch(suppressWarnings(wilcox.test(v[g1],v[g2])$p.value),
+                       error=function(e) NA_real_)
+        enrich_v[tip] <- if (is.finite(m1)&&is.finite(m2)) {
+          if (m1>=m2) grp_levs[1] else grp_levs[2]
+        } else NA_character_
+        pval_v[tip] <- ifelse(is.na(p), 1.0, p)
+      }
+    }
+
+    get_phylum <- function(n) {
+      r  <- if ("Phylum" %in% ranks) tax_norm$Phylum[tax_norm[[tip_rank]]==n]
+            else character(0)
+      if (length(r)&&!is.na(r[1])) r[1] else NA_character_
+    }
+
+    tip_df <- data.frame(
+      label   = tr$tip.label,
+      enrich  = enrich_v[tr$tip.label],
+      pval    = pval_v[tr$tip.label],
+      sig     = !is.na(pval_v[tr$tip.label]) & pval_v[tr$tip.label] < 0.05,
+      abund   = log1p(abund_v[tr$tip.label]),
+      phylum  = vapply(tr$tip.label, get_phylum, character(1)),
+      display = vapply(tr$tip.label, function(n) {
+        lbl <- display_map[[n]]; if (is.null(lbl)) n else lbl
+      }, character(1)),
+      stringsAsFactors = FALSE
+    )
+    tip_df$sig[is.na(tip_df$sig)] <- FALSE
+
+    list(tr=tr, tip_df=tip_df, display_map=display_map,
+         tax_norm=tax_norm, ranks=ranks, grp_levs=grp_levs)
+  }
+
+  # ── Modern multi-ring circular cladogram ─────────────────────────────────
+  # Ring 1: phylum colour strip (ggtreeExtra::geom_fruit)
+  # Ring 2: enrichment group tile
+  # Significant genera (Wilcoxon p<0.05) are labelled in bold italic
+  build_modern_cladogram <- function(ps_in, group_col, out_path_base) {
     tryCatch({
-      for (pkg in c("ape", "ggtree")) {
-        if (!requireNamespace(pkg, quietly = TRUE)) {
-          message("  Skipping taxonomy cladogram — missing package: ", pkg)
+      for (pkg in c("ape","ggtree","ggtreeExtra","ggnewscale")) {
+        if (!requireNamespace(pkg, quietly=TRUE)) {
+          message("  Skipping modern cladogram — missing: ", pkg)
           return(invisible(NULL))
         }
-        suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+        suppressPackageStartupMessages(library(pkg, character.only=TRUE))
       }
 
-      # Glom to Genus to get one row per genus
-      ps_g <- tryCatch(
-        tax_glom(ps_in, taxrank = "Genus", NArm = TRUE),
-        error = function(e) ps_in
-      )
-      tax_mat <- as.data.frame(tax_table(ps_g))
-      otu_mat <- as.matrix(otu_table(ps_g))
-      if (!taxa_are_rows(ps_g)) otu_mat <- t(otu_mat)
-      meta_df  <- as.data.frame(sample_data(ps_g))
-      grp_vec  <- as.character(meta_df[[group_col]])
-      grp_levs <- sort(unique(na.omit(grp_vec)))
+      ps_g <- tryCatch(tax_glom(ps_in, taxrank="Genus", NArm=TRUE),
+                       error=function(e) ps_in)
+      td <- make_tree_data(ps_g)
+      if (is.null(td)) { message("  make_tree_data returned NULL"); return(invisible(NULL)) }
 
-      ranks_all <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
-      ranks     <- ranks_all[ranks_all %in% colnames(tax_mat)]
-      if (length(ranks) < 2) {
-        message("  Not enough taxonomy ranks for cladogram"); return(invisible(NULL))
-      }
+      tr     <- td$tr
+      tip_df <- td$tip_df
+      grp_levs <- td$grp_levs
+      grp_pal  <- setNames(dark_col_lf[seq_along(grp_levs)], grp_levs)
 
-      # Create safe Newick labels (alphanum + underscore only) and keep
-      # a display_map: safe_id → human-readable label for annotation.
-      tax_norm    <- tax_mat[, ranks, drop = FALSE]
-      display_map <- list()
-      for (ri in seq_along(ranks)) {
-        r   <- ranks[ri]
-        bad <- is.na(tax_norm[[r]]) | tax_norm[[r]] == "" |
-               grepl("unclassified|uncultured|unidentified|__NA",
-                     tax_norm[[r]], ignore.case = TRUE)
-        if (any(bad)) {
-          fill <- if (ri > 1) paste0("Unc_", tax_norm[[ranks[ri - 1]]][bad])
-                  else        "Unclassified"
-          tax_norm[[r]][bad] <- fill
-        }
-        display_vals <- tax_norm[[r]]
-        safe_vals    <- gsub("[^A-Za-z0-9_]", "_",
-                             paste0(substr(r, 1, 1), "_", display_vals))
-        tax_norm[[r]] <- safe_vals
-        for (j in seq_along(safe_vals)) {
-          display_map[[safe_vals[j]]] <- display_vals[j]
-        }
-      }
-      display_map[["Root"]] <- "Root"
+      # Phylum colour map
+      phyla <- sort(unique(na.omit(tip_df$phylum)))
+      phylum_colors <- setNames(phylum_pal15[seq_along(phyla)], phyla)
+      tip_df$phylum[is.na(tip_df$phylum)] <- "Unknown"
+      # Use unique column names for ring data to avoid clashing with ggtree's
+      # internal columns (label, y, angle, enrich, phylum, …)
+      phylum_ring <- data.frame(tip_id=tip_df$label,
+                                tip_phylum=tip_df$phylum,
+                                stringsAsFactors=FALSE)
+      enrich_ring <- data.frame(tip_id=tip_df$label,
+                                tip_enrich=tip_df$enrich,
+                                stringsAsFactors=FALSE)
 
-      # Build parent → children map (unique pairs at each rank transition)
-      pc <- list()
-      pc[["Root"]] <- unique(tax_norm[[ranks[1]]])
-      for (i in seq(2, length(ranks))) {
-        pairs <- unique(tax_norm[, c(ranks[i - 1], ranks[i]), drop = FALSE])
-        for (j in seq_len(nrow(pairs))) {
-          p  <- as.character(pairs[j, 1])
-          ch <- as.character(pairs[j, 2])
-          if (is.null(pc[[p]])) pc[[p]] <- character(0)
-          pc[[p]] <- unique(c(pc[[p]], ch))
-        }
-      }
+      n_sig <- sum(tip_df$sig, na.rm=TRUE)
+      n_gen <- nrow(tip_df)
+      message("  Modern cladogram: ", n_gen, " genera, ", n_sig, " sig (p<0.05)")
 
-      # Recursive Newick serializer
-      to_nwk <- function(n) {
-        kids <- pc[[n]]
-        if (is.null(kids) || length(kids) == 0) return(n)
-        paste0("(", paste(vapply(kids, to_nwk, character(1)), collapse = ","), ")", n)
-      }
-      tr <- ape::read.tree(text = paste0(to_nwk("Root"), ";"))
-
-      # Wilcoxon enrichment per genus tip
-      tip_rank  <- ranks[length(ranks)]
-      tip_nodes <- unique(tax_norm[[tip_rank]])
-      enrich_v  <- setNames(rep(NA_character_, length(tip_nodes)), tip_nodes)
-      pval_v    <- setNames(rep(1.0,           length(tip_nodes)), tip_nodes)
-      if (length(grp_levs) >= 2) {
-        g1 <- which(grp_vec == grp_levs[1])
-        g2 <- which(grp_vec == grp_levs[2])
-        for (tip in tip_nodes) {
-          idx <- which(tax_norm[[tip_rank]] == tip)
-          if (length(idx) == 0) next
-          v  <- if (length(idx) == 1) as.numeric(otu_mat[idx, ])
-                else as.numeric(colSums(otu_mat[idx, , drop = FALSE]))
-          m1 <- mean(v[g1]); m2 <- mean(v[g2])
-          p  <- tryCatch(suppressWarnings(wilcox.test(v[g1], v[g2])$p.value),
-                         error = function(e) NA_real_)
-          enrich_v[tip] <- if (is.finite(m1) && is.finite(m2)) {
-            if (m1 >= m2) grp_levs[1] else grp_levs[2]
-          } else NA_character_
-          pval_v[tip] <- ifelse(is.na(p), 1.0, p)
-        }
-      }
-
-      # Tip annotation dataframe keyed on tree tip labels
-      tip_df <- data.frame(
-        label   = tr$tip.label,
-        enrich  = enrich_v[tr$tip.label],
-        sig     = !is.na(pval_v[tr$tip.label]) & pval_v[tr$tip.label] < 0.05,
-        display = vapply(tr$tip.label, function(n) {
-          lbl <- display_map[[n]]; if (is.null(lbl)) n else lbl
-        }, character(1)),
-        stringsAsFactors = FALSE
-      )
-      tip_df$sig[is.na(tip_df$sig)] <- FALSE
-      n_sig <- sum(tip_df$sig, na.rm = TRUE)
-      message("  Cladogram: ", length(tip_nodes), " genera, ", n_sig,
-              " significant (Wilcoxon p<0.05)")
-
-      grp_pal <- setNames(dark_col_lf[seq_along(grp_levs)], grp_levs)
-
-      p_clad <- ggtree(tr, layout = "circular", color = "grey70",
-                       linewidth = 0.35) %<+% tip_df +
-        geom_tippoint(aes(color = enrich), size = 1.8, alpha = 0.90,
-                      na.rm = TRUE) +
-        geom_tiplab(aes(label = ifelse(sig, display, NA_character_)),
-                    size = 2.2, offset = 1.5, align = FALSE, color = "black",
-                    fontface = "italic", na.rm = TRUE) +
+      p_tree <- ggtree(tr, layout="circular", color="grey65",
+                        linewidth=0.28, open.angle=8) %<+% tip_df +
+        geom_tippoint(aes(color=enrich, size=abund), alpha=0.88, na.rm=TRUE) +
         ggplot2::scale_color_manual(
-          values       = grp_pal,
-          na.value     = "grey80",
-          name         = paste0("Higher mean in (", group_col, ")"),
-          na.translate = FALSE
+          values=grp_pal, na.value="grey80",
+          name=paste0("Higher in (", group_col, ")"), na.translate=FALSE
         ) +
+        ggplot2::scale_size_continuous(
+          range=c(0.8,3.5), name="log(mean abund.)",
+          guide=guide_legend(override.aes=list(alpha=0.8, color="grey40"))
+        )
+
+      # Ring 1: phylum colour strip
+      p_tree <- p_tree +
+        ggtreeExtra::geom_fruit(
+          data    = phylum_ring,
+          geom    = geom_tile,
+          mapping = aes(y=tip_id, x=1, fill=tip_phylum),
+          offset=0.05, pwidth=0.07
+        ) +
+        ggplot2::scale_fill_manual(
+          values=c(phylum_colors, Unknown="grey88"),
+          name="Phylum", na.translate=FALSE,
+          guide=guide_legend(ncol=2, override.aes=list(size=5))
+        )
+
+      # Ring 2: enrichment direction tile
+      p_tree <- p_tree +
+        ggnewscale::new_scale_fill() +
+        ggtreeExtra::geom_fruit(
+          data    = enrich_ring,
+          geom    = geom_tile,
+          mapping = aes(y=tip_id, x=1, fill=tip_enrich),
+          offset=0.06, pwidth=0.07
+        ) +
+        ggplot2::scale_fill_manual(
+          values=grp_pal, na.value="grey92",
+          name=paste0("Enriched in\n(", group_col, ")"), na.translate=FALSE,
+          guide=guide_legend(override.aes=list(size=5))
+        )
+
+      # Significant tip labels
+      if (n_sig > 0) {
+        p_tree <- p_tree +
+          geom_tiplab(
+            aes(label=ifelse(sig, display, NA_character_), filter=sig),
+            size=2.0, offset=0.15, color="grey10",
+            fontface="bold.italic", na.rm=TRUE, align=FALSE
+          )
+      }
+
+      p_tree <- p_tree +
         ggplot2::theme_void() +
         ggplot2::theme(
-          legend.position = "bottom",
-          legend.title    = ggplot2::element_text(face = "bold", size = 11),
-          legend.text     = ggplot2::element_text(face = "bold", size = 10),
-          plot.title      = ggplot2::element_text(face = "bold", size = 13,
-                                                  hjust = 0.5),
-          plot.caption    = ggplot2::element_text(size = 9, hjust = 0.5,
-                                                  color = "grey40"),
-          plot.margin     = ggplot2::margin(40, 40, 40, 40)
+          legend.position = "right",
+          legend.box      = "vertical",
+          legend.title    = ggplot2::element_text(face="bold", size=10),
+          legend.text     = ggplot2::element_text(size=9),
+          plot.title      = ggplot2::element_text(face="bold", size=14, hjust=0.5),
+          plot.caption    = ggplot2::element_text(size=8, color="grey50", hjust=0.5),
+          plot.margin     = ggplot2::margin(30,30,30,30)
         ) +
         ggplot2::labs(
           title   = paste0("Taxonomy Cladogram \u2014 ", group_col),
-          caption = paste0(length(tip_nodes), " genera  |  ",
-                           "node colour = group with higher mean abundance  |  ",
-                           "labelled: Wilcoxon p\u00a0<\u00a00.05")
+          caption = paste0(n_gen, " genera  |  inner ring: Phylum  |  ",
+                           "outer ring: enrichment group  |  labelled: p\u202f<\u202f0.05")
         )
 
-      grDevices::pdf(paste0(out_path_base, ".pdf"), width = 14, height = 14)
-      print(p_clad)
-      grDevices::dev.off()
-      ggplot2::ggsave(paste0(out_path_base, ".png"), plot = p_clad,
-                      width = 14, height = 14, units = "in", dpi = 600)
-      message("  Cladogram saved: ", basename(out_path_base), ".pdf / .png")
-    }, error = function(e) {
-      message("  Taxonomy cladogram failed: ", e$message)
-    })
+      grDevices::pdf(paste0(out_path_base,".pdf"), width=17, height=15)
+      print(p_tree); grDevices::dev.off()
+      ggplot2::ggsave(paste0(out_path_base,".png"), plot=p_tree,
+                      width=17, height=15, units="in", dpi=600)
+      message("  Modern cladogram saved: ", basename(out_path_base), ".pdf / .png")
+    }, error=function(e) { message("  Modern cladogram failed: ", e$message) })
     invisible(NULL)
   }
 
   # Always produce the cladogram — regardless of LEfSe significance
-  build_taxonomy_cladogram(ps, group_col,
-                           file.path(out_dir, "lefse_cladogram"))
+  build_modern_cladogram(ps, group_col,
+                         file.path(out_dir, "lefse_cladogram"))
 
   # ── Run LEfSe at one taxonomic level and return panels ────────────────────
+  # Always produces plots for ALL taxa — not just those passing significance
+  # thresholds.  Bars are signed (negative = group1 enriched, positive = group2).
+  # Significant taxa (Wilcoxon p < 0.05) are drawn at full opacity; others are
+  # shown semi-transparent so readers can judge the overall pattern themselves.
   run_and_plot_level <- function(ps_in, rank_name) {
     message("LEfSe at ", rank_name, " level ...")
     ps_glom <- tryCatch(
@@ -327,82 +399,264 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
       error = function(e) { message("tax_glom failed: ", e$message); NULL }
     )
     if (is.null(ps_glom)) return(NULL)
-    message("  After glom: ", ntaxa(ps_glom), " taxa")
+    n_taxa <- ntaxa(ps_glom)
+    message("  After glom: ", n_taxa, " taxa")
 
-    # multigrp_strat must be FALSE for 2-group comparisons —
-    # TRUE triggers a known microbiomeMarker "In index: 1" crash
-    n_groups <- length(unique(get_variable(ps_glom, group_col)))
+    # ── Step 1: get LDA + p-values for every taxon ──────────────────────────
+    # Try run_lefse with lda_cutoff = 0 so all taxa get scores;
+    # fall back to Wilcoxon-based signed-LDA if run_lefse fails entirely.
+    n_groups     <- length(unique(get_variable(ps_glom, group_col)))
     use_multigrp <- n_groups > 2
 
-    mm <- tryCatch(
+    mm_all <- tryCatch(
       run_lefse(ps_glom, group = group_col,
-                multigrp_strat = use_multigrp, lda_cutoff = 2.0,
-                wilcoxon_cutoff = 0.05, norm = "none"),
-      error = function(e) { message("run_lefse failed: ", e$message); NULL }
+                multigrp_strat = use_multigrp,
+                lda_cutoff = 0, wilcoxon_cutoff = 1.0, norm = "none"),
+      error = function(e) { message("  run_lefse(lda_cutoff=0) failed: ", e$message); NULL }
     )
-    n_markers <- tryCatch({
-      mt <- marker_table(mm); if (is.null(mt)) 0L else nrow(mt)
-    }, error = function(e) 0L)
-    # If strict thresholds find nothing, retry with relaxed thresholds
-    if (n_markers == 0L) {
-      message("  No markers at LDA>=2.0 / p<0.05; retrying with LDA>=1.5 / p<0.1 ...")
-      mm <- tryCatch(
-        run_lefse(ps_glom, group = group_col,
-                  multigrp_strat = use_multigrp, lda_cutoff = 1.5,
-                  wilcoxon_cutoff = 0.10, norm = "none"),
-        error = function(e) { message("run_lefse (relaxed) failed: ", e$message); NULL }
+
+    # Build res_df with signed LDA for every taxon
+    tax_mat_g  <- as.data.frame(tax_table(ps_glom))
+    otu_mat_g  <- as.matrix(otu_table(ps_glom))
+    if (!taxa_are_rows(ps_glom)) otu_mat_g <- t(otu_mat_g)
+    meta_g     <- as.data.frame(sample_data(ps_glom))
+    grp_vec    <- as.character(meta_g[[group_col]])
+    grp_levs   <- sort(unique(na.omit(grp_vec)))
+    g1 <- which(grp_vec == grp_levs[1])
+    g2 <- if (length(grp_levs) >= 2) which(grp_vec == grp_levs[2]) else integer(0)
+
+    # Raw taxon name from the rank column (or rowname)
+    get_raw_name <- function() {
+      if (rank_name %in% colnames(tax_mat_g)) as.character(tax_mat_g[[rank_name]])
+      else rownames(tax_mat_g)
+    }
+    raw_names <- get_raw_name()
+
+    # If run_lefse returned scores, use them; otherwise compute manually
+    if (!is.null(mm_all)) {
+      mt <- tryCatch(as.data.frame(marker_table(mm_all)), error=function(e) NULL)
+    } else { mt <- NULL }
+
+    compute_manual_lda <- function() {
+      pv <- numeric(n_taxa); eg <- character(n_taxa); lda_v <- numeric(n_taxa)
+      for (i in seq_len(n_taxa)) {
+        v  <- as.numeric(otu_mat_g[i,])
+        m1 <- mean(v[g1]); m2 <- if (length(g2)) mean(v[g2]) else 0
+        p  <- tryCatch(suppressWarnings(wilcox.test(v[g1], v[g2])$p.value),
+                       error=function(e) NA_real_)
+        pv[i]  <- ifelse(is.na(p), 1.0, p)
+        eg[i]  <- if (is.finite(m1) && is.finite(m2) && m1 >= m2) grp_levs[1]
+                  else if (length(grp_levs) >= 2) grp_levs[2] else grp_levs[1]
+        # Approximate LDA as log10(|grand_mean+1|), signed by direction
+        gm     <- mean(v) + 1
+        lda_raw <- if (gm > 0) log10(gm) else 0
+        lda_v[i] <- if (eg[i] == grp_levs[1]) -lda_raw else lda_raw
+      }
+      data.frame(feature=raw_names, ef_lda=lda_v,
+                 enrich_group=eg, p_value=pv, stringsAsFactors=FALSE)
+    }
+
+    if (!is.null(mt) && nrow(mt) > 0 && all(c("feature","ef_lda","enrich_group") %in% colnames(mt))) {
+      # run_lefse gave us data; add sign & p_value if missing
+      # ef_lda from microbiomeMarker is always positive — add direction
+      if (!"p_value" %in% colnames(mt)) mt$p_value <- NA_real_
+      # recompute sign from enrich_group: group1 → negative, group2 → positive
+      mt$ef_lda <- abs(mt$ef_lda) *
+        ifelse(mt$enrich_group == grp_levs[1], -1, 1)
+      # Fill in any missing taxa (run_lefse may omit 0-variance taxa)
+      missing <- setdiff(raw_names, mt$feature)
+      if (length(missing)) {
+        man <- compute_manual_lda()
+        man <- man[man$feature %in% missing, , drop=FALSE]
+        mt  <- rbind(mt[, c("feature","ef_lda","enrich_group","p_value")], man)
+      } else {
+        mt <- mt[, c("feature","ef_lda","enrich_group","p_value")]
+      }
+      res_df <- mt
+    } else {
+      message("  run_lefse returned no usable scores; computing Wilcoxon-based LDA ...")
+      res_df <- compute_manual_lda()
+    }
+
+    # Also compute strict markers for TSV (p<0.05 AND |lda|≥2)
+    mm_strict <- tryCatch(
+      run_lefse(ps_glom, group=group_col, multigrp_strat=use_multigrp,
+                lda_cutoff=2.0, wilcoxon_cutoff=0.05, norm="none"),
+      error=function(e) NULL
+    )
+    n_strict <- tryCatch({
+      mt2 <- marker_table(mm_strict); if(is.null(mt2)) 0L else nrow(mt2)
+    }, error=function(e) 0L)
+    if (n_strict == 0L) {
+      mm_strict <- tryCatch(
+        run_lefse(ps_glom, group=group_col, multigrp_strat=use_multigrp,
+                  lda_cutoff=1.5, wilcoxon_cutoff=0.10, norm="none"),
+        error=function(e) NULL
       )
-      n_markers <- tryCatch({
-        mt <- marker_table(mm); if (is.null(mt)) 0L else nrow(mt)
-      }, error = function(e) 0L)
     }
-    if (n_markers == 0L) {
-      message("No significant markers at ", rank_name, " level.")
-      return(NULL)
+    message("  All-taxa LDA computed (", nrow(res_df), " taxa); strict markers: ", n_strict)
+
+    # ── Clean taxon labels ────────────────────────────────────────────────────
+    res_df$feature <- vapply(as.character(res_df$feature),
+                              format_taxon_label, character(1))
+    res_df$feature[is.na(res_df$feature)|res_df$feature==""] <- "Unknown"
+
+    # Aggregate duplicated labels (format_taxon_label can collapse distinct OTUs
+    # to the same display name — take mean LDA, majority enrich_group, min p_value)
+    if (anyDuplicated(res_df$feature)) {
+      res_df <- do.call(rbind, lapply(split(res_df, res_df$feature), function(d) {
+        data.frame(
+          feature      = d$feature[1],
+          ef_lda       = mean(d$ef_lda),
+          enrich_group = d$enrich_group[which.max(tabulate(match(d$enrich_group,
+                                                                  unique(d$enrich_group))))],
+          p_value      = min(d$p_value),
+          stringsAsFactors = FALSE
+        )
+      }))
     }
 
-    res_df         <- as.data.frame(marker_table(mm))
-    res_df$lda_abs <- abs(res_df$ef_lda)
-    enrich_groups  <- sort(unique(res_df$enrich_group))
-    enrich_colors  <- setNames(dark_col_lf[seq_along(enrich_groups)], enrich_groups)
+    # Significance flag
+    res_df$sig   <- !is.na(res_df$p_value) & res_df$p_value < 0.05
+    res_df$p_value[is.na(res_df$p_value)] <- 1.0
 
-    # Panel B: LDA bar chart (group-colored, no sample labels)
+    # Sort by signed LDA (most negative first → most positive last)
+    res_df <- res_df[order(res_df$ef_lda), ]
+    res_df$feature <- factor(res_df$feature, levels = unique(res_df$feature))
+
+    # ── Panel B: bidirectional signed LDA bar chart ───────────────────────────
     p_bar <- ggplot(res_df,
-                    aes(x = reorder(feature, lda_abs), y = lda_abs,
-                        fill = enrich_group)) +
-      geom_col(color = "grey20", linewidth = 0.35, alpha = 0.90) +
-      coord_flip() +
-      scale_fill_manual(values = enrich_colors, name = "Enriched in") +
-      theme_classic(base_size = 12) +
-      theme(
-        legend.position = "bottom",
-        legend.title    = element_text(face = "bold", size = 12),
-        legend.text     = element_text(face = "bold", size = 11),
-        axis.title      = element_text(face = "bold", size = 12),
-        axis.text       = element_text(face = "bold", size = 10, color = "black"),
-        plot.title      = element_text(face = "bold", size = 13),
-        axis.line       = element_line(linewidth = 0.6)
+                    aes(x = ef_lda, y = feature,
+                        fill = enrich_group,
+                        alpha = sig)) +
+      geom_col(color = NA, linewidth = 0) +
+      geom_vline(xintercept = 0, color = "grey25", linewidth = 0.55) +
+      # Significance asterisk at bar tip
+      geom_text(
+        data    = res_df[res_df$sig, , drop = FALSE],
+        mapping = aes(x = ef_lda + sign(ef_lda) * 0.06,
+                      label = "*"),
+        inherit.aes = FALSE,
+        size = 4.5, color = "grey10", vjust = 0.5
       ) +
-      labs(x = NULL, y = "LDA Score (log10)",
-           title = paste("LDA Scores \u2014", rank_name))
+      scale_alpha_manual(values = c("TRUE" = 0.95, "FALSE" = 0.32),
+                         guide  = "none") +
+      scale_fill_manual(values = group_pal_all,
+                        name   = paste0("Enriched in\n(", group_col, ")"),
+                        na.value = "grey70") +
+      scale_x_continuous(
+        labels = function(x) paste0(ifelse(x < 0, "\u2190", "\u2192"), " ", abs(x)),
+        expand = expansion(mult = 0.12)
+      ) +
+      theme_classic(base_size = 11) +
+      theme(
+        legend.position  = "bottom",
+        legend.title     = element_text(face = "bold", size = 11),
+        legend.text      = element_text(face = "bold", size = 10),
+        axis.title       = element_text(face = "bold", size = 11),
+        axis.text.y      = element_text(size = 8, color = "black"),
+        axis.text.x      = element_text(size = 9),
+        plot.title       = element_text(face = "bold", size = 12, hjust = 0.5),
+        plot.subtitle    = element_text(size = 9, hjust = 0.5, color = "grey40"),
+        axis.line        = element_line(linewidth = 0.55)
+      ) +
+      labs(
+        x        = paste0("Signed LDA Score (log10)",
+                          "      \u2190 ", grp_levs[1],
+                          "  |  ", if (length(grp_levs)>=2) grp_levs[2] else "",
+                          " \u2192"),
+        y        = NULL,
+        title    = paste("LDA Scores \u2014", rank_name, "Level"),
+        subtitle = paste0("All ", nrow(res_df), " taxa shown  |  ",
+                          "* p\u202f<\u202f0.05 (Wilcoxon)  |  ",
+                          "transparency = non-significant")
+      )
 
-    # Panel A: circular cladogram (group-colored nodes, no sample labels)
+    # ── Panel A: modern circular cladogram for THIS level ─────────────────────
+    # We re-use the make_tree_data helper on the glommed phyloseq
     p_clad <- tryCatch({
-      plot_cladogram(mm, color = group_col, only_marker = TRUE,
-                     clade_label_level = 4) +
-        theme(
-          legend.position = "bottom",
-          legend.title    = element_text(face = "bold", size = 12),
-          legend.text     = element_text(face = "bold", size = 11),
-          plot.title      = element_text(face = "bold", size = 13)
+      for (pkg in c("ape","ggtree","ggtreeExtra","ggnewscale")) {
+        if (!requireNamespace(pkg, quietly=TRUE)) stop("missing ", pkg)
+        suppressPackageStartupMessages(library(pkg, character.only=TRUE))
+      }
+      ps_for_clad <- tryCatch(tax_glom(ps_in, taxrank=rank_name, NArm=TRUE),
+                               error=function(e) ps_glom)
+      td <- make_tree_data(ps_for_clad)
+      if (is.null(td)) stop("make_tree_data returned NULL")
+
+      tr_l   <- td$tr; tip_df_l <- td$tip_df
+      n_sig_c <- sum(tip_df_l$sig, na.rm=TRUE)
+
+      phyla_l <- sort(unique(na.omit(tip_df_l$phylum)))
+      pc_map  <- setNames(phylum_pal15[seq_along(phyla_l)], phyla_l)
+      tip_df_l$phylum[is.na(tip_df_l$phylum)] <- "Unknown"
+      # Unique column names to avoid ggtreeExtra clash with tree variables
+      phylum_ring_l <- data.frame(tip_id=tip_df_l$label,
+                                   tip_phylum=tip_df_l$phylum,
+                                   stringsAsFactors=FALSE)
+      enrich_ring_l <- data.frame(tip_id=tip_df_l$label,
+                                   tip_enrich=tip_df_l$enrich,
+                                   stringsAsFactors=FALSE)
+
+      p_c <- ggtree(tr_l, layout="circular", color="grey65",
+                     linewidth=0.3, open.angle=10) %<+% tip_df_l +
+        geom_tippoint(aes(color=enrich, size=abund), alpha=0.88, na.rm=TRUE) +
+        ggplot2::scale_color_manual(values=group_pal_all, na.value="grey80",
+                                    name=paste0("Higher in (", group_col, ")"),
+                                    na.translate=FALSE) +
+        ggplot2::scale_size_continuous(range=c(0.8,3.5), name="log(mean abund.)",
+                                       guide=guide_legend(override.aes=list(alpha=0.8,color="grey40")))
+
+      # Ring 1: phylum
+      p_c <- p_c +
+        ggtreeExtra::geom_fruit(
+          data=phylum_ring_l, geom=geom_tile,
+          mapping=aes(y=tip_id, x=1, fill=tip_phylum), offset=0.05, pwidth=0.08
         ) +
-        labs(title = paste("Cladogram \u2014", rank_name))
+        ggplot2::scale_fill_manual(
+          values=c(pc_map, Unknown="grey88"), name="Phylum",
+          na.translate=FALSE,
+          guide=guide_legend(ncol=2, override.aes=list(size=5))
+        )
+
+      # Ring 2: enrichment
+      p_c <- p_c +
+        ggnewscale::new_scale_fill() +
+        ggtreeExtra::geom_fruit(
+          data=enrich_ring_l, geom=geom_tile,
+          mapping=aes(y=tip_id, x=1, fill=tip_enrich), offset=0.06, pwidth=0.08
+        ) +
+        ggplot2::scale_fill_manual(
+          values=group_pal_all, name=paste0("Enriched in\n(", group_col, ")"),
+          na.value="grey92", na.translate=FALSE,
+          guide=guide_legend(override.aes=list(size=5))
+        )
+
+      if (n_sig_c > 0) {
+        p_c <- p_c +
+          geom_tiplab(aes(label=ifelse(sig, display, NA_character_), filter=sig),
+                      size=2.0, offset=0.14, color="grey10",
+                      fontface="bold.italic", na.rm=TRUE, align=FALSE)
+      }
+
+      p_c +
+        ggplot2::theme_void() +
+        ggplot2::theme(
+          legend.position = "right", legend.box = "vertical",
+          legend.title    = ggplot2::element_text(face="bold", size=10),
+          legend.text     = ggplot2::element_text(size=9),
+          plot.title      = ggplot2::element_text(face="bold", size=12, hjust=0.5),
+          plot.margin     = ggplot2::margin(20,20,20,20)
+        ) +
+        ggplot2::labs(
+          title = paste0("Cladogram \u2014 ", rank_name, " Level")
+        )
     }, error = function(e) {
-      message("plot_cladogram failed at ", rank_name, ": ", e$message)
+      message("  Per-level cladogram failed (", rank_name, "): ", e$message)
       NULL
     })
 
-    list(mm = mm, res_df = res_df, bar = p_bar, clad = p_clad)
+    list(mm = mm_strict, res_df = res_df, bar = p_bar, clad = p_clad)
   }
 
   # ── Save multi-panel for one level ────────────────────────────────────────
@@ -411,16 +665,17 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
                             paste0("lefse_", tolower(rank_name), "_plots"))
     if (is.null(panels)) {
       ensure_file(paste0(fname_base, ".pdf"),
-                  paste("No significant LEfSe markers at", rank_name, "level"))
+                  paste("LEfSe failed at", rank_name, "level"))
       ensure_file(paste0(fname_base, ".png"),
-                  paste("No significant LEfSe markers at", rank_name, "level"))
+                  paste("LEfSe failed at", rank_name, "level"))
       return(invisible(NULL))
     }
     pieces <- Filter(Negate(is.null), list(panels$clad, panels$bar))
 
     if (length(pieces) >= 2 && requireNamespace("patchwork", quietly = TRUE)) {
       library(patchwork)
-      combined <- patchwork::wrap_plots(pieces, ncol = 2, widths = c(1.1, 0.9)) +
+      # Cladogram gets ~55 % of width; LDA bar ~45 %
+      combined <- patchwork::wrap_plots(pieces, ncol = 2, widths = c(1.2, 1.0)) +
         patchwork::plot_annotation(
           tag_levels = "A",
           title      = paste("LEfSe Analysis \u2014", rank_name, "Level"),
@@ -429,16 +684,18 @@ if (requireNamespace("microbiomeMarker", quietly = TRUE)) {
         ) +
         patchwork::plot_layout(guides = "collect") &
         theme(legend.position = "bottom")
+    } else if (length(pieces) == 1) {
+      combined <- pieces[[1]]
     } else {
-      combined <- if (length(pieces) > 0) pieces[[length(pieces)]] else NULL
+      combined <- NULL
     }
 
     if (!is.null(combined)) {
-      grDevices::pdf(paste0(fname_base, ".pdf"), width = 16, height = 9)
+      grDevices::pdf(paste0(fname_base, ".pdf"), width = 22, height = 13)
       print(combined)
       grDevices::dev.off()
       ggplot2::ggsave(paste0(fname_base, ".png"), plot = combined,
-                      width = 16, height = 9, units = "in", dpi = 600)
+                      width = 22, height = 13, units = "in", dpi = 600)
     } else {
       ensure_file(paste0(fname_base, ".pdf"))
       ensure_file(paste0(fname_base, ".png"))
