@@ -41,6 +41,7 @@ rule core_plots:
         viz_root  = OUT_VIZ,
         alpha_dir = f"{OUT}/exported/alpha_diversity",
         beta_dir  = f"{OUT}/exported/beta_diversity",
+        palette   = config.get("plots", {}).get("color_palette", "okabe_ito"),
     log:
         f"{OUT}/logs/core_plots.log",
     shell:
@@ -59,6 +60,7 @@ rule core_plots:
             '{input.taxonomy}' \
             '{params.beta_dir}' \
             '{input.bray_dm}' \
+            '{params.palette}' \
             2>&1 | tee {log}
         """
 

@@ -22,7 +22,8 @@
 #       <viz_root>            \   # visualizations/
 #       <feature_table_tsv>   \   # exported/feature_table/feature-table.tsv
 #       <taxonomy_tsv>        \   # exported/taxonomy/taxonomy.tsv
-#       <beta_dir>                # exported/beta_diversity/
+#       <beta_dir>            \   # exported/beta_diversity/
+#       [palette]                 # color palette name (default: okabe_ito)
 # ============================================================================= 
 
 suppressPackageStartupMessages({
@@ -51,6 +52,7 @@ feat_table_tsv <- args[6]
 taxonomy_tsv   <- args[7]
 beta_dir       <- args[8]
 bray_dm_tsv    <- args[9]
+palette_name   <- if (length(args) >= 10) args[10] else "okabe_ito"
 grp_display    <- tools::toTitleCase(gsub("_", " ", group_col))
 
 # ── Output subdirectories ─────────────────────────────────────────────────────
@@ -82,12 +84,52 @@ read_metadata <- function(path) {
   })
 }
 
-# Dark, colorblind-accessible publication palette (consistent with extended pipeline)
-DARK_PAL <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
-              "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
+# =============================================================================
+# Palette dispatcher — resolves a named palette to a hex color vector.
+# All palettes are defined as hex vectors (zero extra R package dependencies).
+# To switch palette: change plots.color_palette in config/config.yaml
+# =============================================================================
+get_palette <- function(name, n) {
+  palettes <- list(
+    # Wong 2011, Nature Methods — explicit colorblind-safe recommendation
+    okabe_ito    = c("#E69F00", "#56B4E9", "#009E73", "#F0E442",
+                     "#0072B2", "#D55E00", "#CC79A7", "#000000"),
+    # Nature Publishing Group (ggsci::pal_npg compatible hex values)
+    npg          = c("#E64B35", "#4DBBD5", "#00A087", "#3C5488",
+                     "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
+                     "#7E6148", "#B09C85"),
+    # The Lancet journal (ggsci::pal_lancet compatible hex values)
+    lancet       = c("#00468B", "#ED0000", "#42B540", "#0099B4",
+                     "#925E9F", "#FDAF91", "#AD002A", "#ADB6B6", "#1B1919"),
+    # Journal of Clinical Oncology (ggsci::pal_jco compatible hex values)
+    jco          = c("#0073C2", "#EFC000", "#868686", "#CD534C",
+                     "#7AA6DC", "#003C67", "#8F7700", "#3B3B3B",
+                     "#A73030", "#4A6990"),
+    # Science / AAAS (ggsci::pal_aaas compatible hex values)
+    aaas         = c("#3B4992", "#EE0000", "#008B45", "#631879",
+                     "#008280", "#BB0021", "#5F559B", "#A20056",
+                     "#808180", "#1B1919"),
+    # Tableau 10 — high-contrast categorical palette
+    tableau10    = c("#4E79A7", "#F28E2B", "#E15759", "#76B7B2",
+                     "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7",
+                     "#9C755F", "#BAB0AC"),
+    # RColorBrewer Dark2 — print-safe, up to 8 groups
+    brewer_dark2 = RColorBrewer::brewer.pal(8,  "Dark2"),
+    # RColorBrewer Set1 — high-contrast, up to 9 groups
+    brewer_set1  = RColorBrewer::brewer.pal(9,  "Set1")
+  )
+  base <- palettes[[name]]
+  if (is.null(base)) {
+    message("[core_plots] Unknown palette '", name, "', falling back to okabe_ito")
+    base <- palettes[["okabe_ito"]]
+  }
+  if (n <= length(base)) return(base[seq_len(n)])
+  # Interpolate when more groups than palette entries
+  colorRampPalette(base)(n)
+}
 
-get_dark_colors <- function(levels_vec) {
-  setNames(DARK_PAL[seq_along(levels_vec)], levels_vec)
+get_group_colors <- function(levels_vec) {
+  setNames(get_palette(palette_name, length(levels_vec)), levels_vec)
 }
 
 # =============================================================================
@@ -207,7 +249,7 @@ plot_alpha <- function(meta) {
   if (length(pub_metrics) == 0) pub_metrics <- all_metrics
 
   grp_levels  <- sort(unique(as.character(meta[[group_col]])))
-  dark_colors <- get_dark_colors(grp_levels)
+  dark_colors <- get_group_colors(grp_levels)
 
   panel_plots <- list()
   for (m in pub_metrics) {
@@ -264,9 +306,12 @@ plot_alpha <- function(meta) {
   n_panels <- length(panel_plots)
   if (n_panels == 0) { message("No alpha panels created"); return(invisible(NULL)) }
 
-  fig_w <- max(4.5 * n_panels, 8)
+  n_cols <- min(n_panels, 3L)           # max 3 columns; rows grow automatically
+  n_rows <- ceiling(n_panels / n_cols)
+  fig_w  <- 4.5 * n_cols               # 4.5 in per column
+  fig_h  <- 5.5 * n_rows               # 5.5 in per row
   if (requireNamespace("patchwork", quietly = TRUE)) {
-    combined_plot <- patchwork::wrap_plots(panel_plots, nrow = 1) +
+    combined_plot <- patchwork::wrap_plots(panel_plots, ncol = n_cols, nrow = n_rows) +
       patchwork::plot_annotation(tag_levels = "A") +
       patchwork::plot_layout(guides = "collect") &
       theme(legend.position = "bottom")
@@ -275,7 +320,7 @@ plot_alpha <- function(meta) {
   }
 
   save_png(combined_plot, file.path(div_dir, "alpha_diversity_overview.png"),
-           w = fig_w, h = 6)
+           w = fig_w, h = fig_h)
 }
 
 # =============================================================================
@@ -327,7 +372,7 @@ make_pcoa_gg <- function(ord, label, meta) {
 
   df[[group_col]] <- factor(df[[group_col]])
   grp_levels  <- levels(df[[group_col]])
-  dark_colors <- get_dark_colors(grp_levels)
+  dark_colors <- get_group_colors(grp_levels)
 
   xlab <- if (!is.na(pv[1])) paste0("PC1 (", pv[1], "% var)") else "PC1"
   ylab <- if (!is.na(pv[2])) paste0("PC2 (", pv[2], "% var)") else "PC2"
@@ -375,7 +420,7 @@ plot_beta <- function(meta) {
   }
 
   grp_levels  <- sort(unique(as.character(meta[[group_col]])))
-  dark_colors <- get_dark_colors(grp_levels)
+  dark_colors <- get_group_colors(grp_levels)
 
   bold_theme <- theme_bw(base_size = 13) +
     theme(
@@ -510,7 +555,7 @@ plot_beta <- function(meta) {
       else                    paste0("p = ", signif(box_p, 2), " (NS)")
     } else ""
 
-    box_pal <- c("Within-group" = DARK_PAL[1], "Between-group" = DARK_PAL[2])
+    box_pal <- setNames(get_palette(palette_name, 2), c("Within-group", "Between-group"))
 
     ggplot(bc_box_df, aes(x = Comparison, y = Dissimilarity, fill = Comparison)) +
       geom_boxplot(alpha = 0.85, outlier.shape = 21, outlier.size = 1.5,
@@ -604,9 +649,7 @@ plot_taxonomy_bar <- function(meta) {
   }
 
   n_phy <- length(unique(plot_df$Phylum))
-  pal   <- if (requireNamespace("RColorBrewer", quietly = TRUE))
-    colorRampPalette(RColorBrewer::brewer.pal(min(n_phy, 12), "Paired"))(n_phy)
-  else scales::hue_pal()(n_phy)
+  pal   <- get_palette(palette_name, n_phy)
 
   p <- ggplot(plot_df, aes(x = !!sym(x_col), y = rel_abund, fill = Phylum)) +
     geom_col(position = "stack", width = 0.65) +

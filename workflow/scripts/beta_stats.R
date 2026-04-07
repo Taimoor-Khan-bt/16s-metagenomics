@@ -8,6 +8,7 @@ suppressPackageStartupMessages({
   library(ggplot2)
   library(ape)
   library(dplyr)
+  library(RColorBrewer)
 })
 
 # ── Arguments ─────────────────────────────────────────────────────────────────
@@ -21,7 +22,42 @@ wunifrac_file <- args[4]
 group_col     <- args[5]
 covariates    <- if (nchar(args[6]) > 0) strsplit(args[6], ",")[[1]] else character(0)
 out_dir       <- args[7]
+palette_name  <- if (length(args) >= 8) args[8] else "okabe_ito"
 grp_display   <- tools::toTitleCase(gsub("_", " ", group_col))
+
+# =============================================================================
+# Palette dispatcher — resolves a named palette to a hex color vector.
+# To switch palette: change plots.color_palette in config/config.yaml
+# =============================================================================
+get_palette <- function(name, n) {
+  palettes <- list(
+    okabe_ito    = c("#E69F00", "#56B4E9", "#009E73", "#F0E442",
+                     "#0072B2", "#D55E00", "#CC79A7", "#000000"),
+    npg          = c("#E64B35", "#4DBBD5", "#00A087", "#3C5488",
+                     "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
+                     "#7E6148", "#B09C85"),
+    lancet       = c("#00468B", "#ED0000", "#42B540", "#0099B4",
+                     "#925E9F", "#FDAF91", "#AD002A", "#ADB6B6", "#1B1919"),
+    jco          = c("#0073C2", "#EFC000", "#868686", "#CD534C",
+                     "#7AA6DC", "#003C67", "#8F7700", "#3B3B3B",
+                     "#A73030", "#4A6990"),
+    aaas         = c("#3B4992", "#EE0000", "#008B45", "#631879",
+                     "#008280", "#BB0021", "#5F559B", "#A20056",
+                     "#808180", "#1B1919"),
+    tableau10    = c("#4E79A7", "#F28E2B", "#E15759", "#76B7B2",
+                     "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7",
+                     "#9C755F", "#BAB0AC"),
+    brewer_dark2 = RColorBrewer::brewer.pal(8, "Dark2"),
+    brewer_set1  = RColorBrewer::brewer.pal(9, "Set1")
+  )
+  base <- palettes[[name]]
+  if (is.null(base)) {
+    message("[beta_stats] Unknown palette '", name, "', falling back to okabe_ito")
+    base <- palettes[["okabe_ito"]]
+  }
+  if (n <= length(base)) return(base[seq_len(n)])
+  colorRampPalette(base)(n)
+}
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -205,11 +241,9 @@ get_perm_label <- function(perm_list, label) {
   paste0("PERMANOVA: R² = ", r2, ", ", sig)
 }
 # ── Plotting ──────────────────────────────────────────────────────────────────
-# Dark color palette (consistent with alpha diversity plots)
-grp_levels_b <- sort(unique(as.character(meta[[group_col]])))
-dark_pal_b   <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
-                  "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
-dark_colors_b <- setNames(dark_pal_b[seq_along(grp_levels_b)], grp_levels_b)
+# Color palette (set via plots.color_palette in config/config.yaml)
+grp_levels_b  <- sort(unique(as.character(meta[[group_col]])))
+dark_colors_b <- setNames(get_palette(palette_name, length(grp_levels_b)), grp_levels_b)
 
 bold_theme_b <- theme_bw(base_size = 13) +
   theme(
@@ -291,7 +325,7 @@ if (!is.null(bray_dist)) {
     else                    paste0("p = ", signif(box_p, 2), " (NS)")
   } else ""
 
-  box_pal <- c("Within-group" = "#1B4F72", "Between-group" = "#922B21")
+  box_pal <- setNames(get_palette(palette_name, 2), c("Within-group", "Between-group"))
 
   p_bc_box <- ggplot(bc_box_df, aes(x = Comparison, y = Dissimilarity,
                                      fill = Comparison)) +
@@ -373,17 +407,21 @@ n_p    <- length(panels)
 
 if (n_p > 1 && requireNamespace("patchwork", quietly = TRUE)) {
   library(patchwork)
-  n_rows         <- if (n_p <= 3) 1L else 2L
-  combined_beta  <- patchwork::wrap_plots(panels, nrow = n_rows) +
+  n_cols_b       <- min(n_p, 3L)        # max 3 columns; rows grow automatically
+  n_rows_b       <- ceiling(n_p / n_cols_b)
+  combined_beta  <- patchwork::wrap_plots(panels, ncol = n_cols_b, nrow = n_rows_b) +
     patchwork::plot_annotation(tag_levels = "A") +
     patchwork::plot_layout(guides = "collect") &
     theme(legend.position = "bottom")
 } else {
   combined_beta <- NULL
+  n_cols_b <- 1L; n_rows_b <- 1L
 }
 
 # ── Save outputs ──────────────────────────────────────────────────────────
-pdf(file.path(out_dir, "pcoa_plots.pdf"), width = 16, height = 6)
+pdf_w <- 5.5 * n_cols_b
+pdf_h <- 6.0 * n_rows_b
+pdf(file.path(out_dir, "pcoa_plots.pdf"), width = pdf_w, height = pdf_h)
 if (!is.null(combined_beta)) {
   print(combined_beta)
 } else {
@@ -393,11 +431,10 @@ dev.off()
 message("Saved: pcoa_plots.pdf")
 
 png_plot <- if (!is.null(combined_beta)) combined_beta else p_ait
-png_w    <- if (n_p <= 3) 16 else 12
 ggsave(file.path(out_dir, "pcoa_plots.png"),
        plot   = png_plot,
-       width  = png_w,
-       height = if (n_p <= 3) 6 else 12, units = "in", dpi = 600)
+       width  = 5.5 * n_cols_b,
+       height = 6.0 * n_rows_b, units = "in", dpi = 600)
 message("Saved: pcoa_plots.png (600 DPI)")
 
 # Save PERMDISP centroid-distance boxplot as its own PNG

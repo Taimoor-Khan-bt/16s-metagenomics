@@ -3,7 +3,7 @@
 # alpha_stats.R — Alpha diversity statistical analysis
 # =============================================================================
 # Usage: Rscript alpha_stats.R <metadata_tsv> <alpha_dir> <group_col>
-#                              <covariates_csv> <out_dir>
+#                              <covariates_csv> <out_dir> [palette]
 #
 # Required R packages: ggplot2, ggpubr, dplyr, tidyr, broom
 # Install: mamba install -n qiime2 -c conda-forge r-ggplot2 r-ggpubr r-dplyr r-tidyr r-broom
@@ -13,6 +13,7 @@ suppressPackageStartupMessages({
   library(ggplot2)
   library(dplyr)
   library(tidyr)
+  library(RColorBrewer)
 })
 
 # ── Arguments ──────────────────────────────────────────────────────────────────
@@ -24,7 +25,42 @@ alpha_dir     <- args[2]
 group_col     <- args[3]
 covariates    <- if (nchar(args[4]) > 0) strsplit(args[4], ",")[[1]] else character(0)
 out_dir       <- args[5]
+palette_name  <- if (length(args) >= 6) args[6] else "okabe_ito"
 grp_display   <- tools::toTitleCase(gsub("_", " ", group_col))
+
+# =============================================================================
+# Palette dispatcher — resolves a named palette to a hex color vector.
+# To switch palette: change plots.color_palette in config/config.yaml
+# =============================================================================
+get_palette <- function(name, n) {
+  palettes <- list(
+    okabe_ito    = c("#E69F00", "#56B4E9", "#009E73", "#F0E442",
+                     "#0072B2", "#D55E00", "#CC79A7", "#000000"),
+    npg          = c("#E64B35", "#4DBBD5", "#00A087", "#3C5488",
+                     "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
+                     "#7E6148", "#B09C85"),
+    lancet       = c("#00468B", "#ED0000", "#42B540", "#0099B4",
+                     "#925E9F", "#FDAF91", "#AD002A", "#ADB6B6", "#1B1919"),
+    jco          = c("#0073C2", "#EFC000", "#868686", "#CD534C",
+                     "#7AA6DC", "#003C67", "#8F7700", "#3B3B3B",
+                     "#A73030", "#4A6990"),
+    aaas         = c("#3B4992", "#EE0000", "#008B45", "#631879",
+                     "#008280", "#BB0021", "#5F559B", "#A20056",
+                     "#808180", "#1B1919"),
+    tableau10    = c("#4E79A7", "#F28E2B", "#E15759", "#76B7B2",
+                     "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7",
+                     "#9C755F", "#BAB0AC"),
+    brewer_dark2 = RColorBrewer::brewer.pal(8, "Dark2"),
+    brewer_set1  = RColorBrewer::brewer.pal(9, "Set1")
+  )
+  base <- palettes[[name]]
+  if (is.null(base)) {
+    message("[alpha_stats] Unknown palette '", name, "', falling back to okabe_ito")
+    base <- palettes[["okabe_ito"]]
+  }
+  if (n <= length(base)) return(base[seq_len(n)])
+  colorRampPalette(base)(n)
+}
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -206,9 +242,7 @@ metric_labels <- c(
 
 # Dark, publication-quality color palette (colorblind-accessible)
 grp_levels  <- sort(unique(as.character(combined[[group_col]])))
-dark_pal    <- c("#1B4F72", "#922B21", "#1D8348", "#6C3483", "#784212",
-                 "#0E6655", "#4A235A", "#1A5276", "#7D6608", "#212F3D")
-dark_colors <- setNames(dark_pal[seq_along(grp_levels)], grp_levels)
+dark_colors <- setNames(get_palette(palette_name, length(grp_levels)), grp_levels)
 
 # Build one bar chart per metric (mean ± SE + individual sample dots)
 panel_plots <- list()
@@ -320,12 +354,15 @@ for (m in pub_metrics) {
 
 # Assemble multi-panel (A / B / C labels) with patchwork; facet fallback if absent
 n_panels <- length(panel_plots)
-fig_w    <- max(4.5 * n_panels, 8)
+n_cols   <- min(n_panels, 3L)           # max 3 columns; rows grow automatically
+n_rows   <- ceiling(n_panels / n_cols)
+fig_w    <- 4.5 * n_cols                # 4.5 in per column
+fig_h    <- 5.5 * n_rows                # 5.5 in per row
 
 if (n_panels > 0) {
   if (requireNamespace("patchwork", quietly = TRUE)) {
     library(patchwork)
-    combined_plot <- patchwork::wrap_plots(panel_plots, nrow = 1) +
+    combined_plot <- patchwork::wrap_plots(panel_plots, ncol = n_cols, nrow = n_rows) +
       patchwork::plot_annotation(tag_levels = "A") +
       patchwork::plot_layout(guides = "collect") &
       theme(legend.position = "bottom")
@@ -365,7 +402,7 @@ if (n_panels > 0) {
   }
 
   # ── PDF: Page 1 = bar chart, Page 2 = GLM forest plot ─────────────────────
-  pdf(file.path(out_dir, "alpha_plots.pdf"), width = fig_w, height = 6)
+  pdf(file.path(out_dir, "alpha_plots.pdf"), width = fig_w, height = fig_h)
   print(combined_plot)
 
   # ── Page 2: GLM Forest Plot (retained from original) ──────────────────────
@@ -428,7 +465,7 @@ if (n_panels > 0) {
   # ── PNG (600 DPI) — bar chart panel ──────────────────────────────────────
   ggsave(file.path(out_dir, "alpha_plots.png"),
          plot = combined_plot,
-         width = fig_w, height = 6, units = "in", dpi = 600)
+         width = fig_w, height = fig_h, units = "in", dpi = 600)
   message("Saved: alpha_plots.png (600 DPI)")
 
   # ── PNG (600 DPI) — GLM forest plot ───────────────────────────────────────

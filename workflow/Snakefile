@@ -119,20 +119,13 @@ rule all:
         f"{OUT_VIZ}/qc/read_depth.png",
         f"{OUT_VIZ}/taxonomy/taxonomy_barplot.png",
         f"{OUT_VIZ}/taxonomy/top_taxa_abundance.png",
-# ── Target rule: full extended analysis (A–G) ─────────────────────────────────
-# Run with: snakemake all_extended --cores all --snakefile workflow/Snakefile
-rule all_extended:
-    input:
-        # ─ Base pipeline (inherited) ───────────────────────────────────────
-        rules.all.input,
-        # ─ A: Alpha diversity statistics ──────────────────────────────────
+        # ── Alpha diversity plots + statistics ────────────────────────────────────
         f"{OUT}/stats/alpha/alpha_statistics.tsv",
         f"{OUT}/stats/alpha/dunn_posthoc.tsv",
-        f"{OUT_VIZ}/diversity/alpha_plots.pdf",        f"{OUT_VIZ}/diversity/alpha_plots.png",        f"{OUT_VIZ}/diversity/alpha_plots_glm.png",        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
-               metric=ALPHA_METRICS),
-        # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────────
-        expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
-               beta_metric=BETA_METRICS),
+        f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        f"{OUT_VIZ}/diversity/alpha_plots.png",
+        f"{OUT_VIZ}/diversity/alpha_plots_glm.png",
+        # ── Beta diversity plots + PERMANOVA statistics ───────────────────────────
         expand(f"{OUT}/stats/beta/{{beta_metric}}_distance_matrix.tsv",
                beta_metric=["bray_curtis", "weighted_unifrac"]),
         f"{OUT}/stats/beta/permanova_results.tsv",
@@ -140,6 +133,18 @@ rule all_extended:
         f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
         f"{OUT_VIZ}/diversity/pcoa_plots.png",
         f"{OUT_VIZ}/diversity/permdisp_plots.png",
+# ── Target rule: full extended analysis (A–G) ─────────────────────────────────
+# Run with: snakemake all_extended --cores all --snakefile workflow/Snakefile
+rule all_extended:
+    input:
+        # ─ Base pipeline (inherited, includes alpha+beta plots) ───────────
+        rules.all.input,
+        # ─ A: Alpha diversity — group significance QZVs ───────────────────
+        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
+               metric=ALPHA_METRICS),
+        # ─ B: Beta diversity — PERMANOVA QZVs ─────────────────────────────
+        expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
+               beta_metric=BETA_METRICS),
         # ─ C: Composition analysis ─────────────────────────────────────────
         expand(f"{OUT}/composition/{{level}}_relfreq.tsv", level=COLLAPSE_LEVELS),
         expand(f"{OUT_VIZ}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),

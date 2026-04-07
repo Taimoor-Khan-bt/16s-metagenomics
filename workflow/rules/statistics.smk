@@ -125,6 +125,7 @@ rule r_alpha_stats:
         alpha_dir  = f"{OUT}/exported/alpha_diversity",
         out_dir    = f"{_STATS}/alpha",
         viz_dir    = f"{OUT_VIZ}/diversity",
+        palette    = config.get("plots", {}).get("color_palette", "okabe_ito"),
     log:
         f"{OUT}/logs/r_alpha_stats.log",
     shell:
@@ -136,6 +137,7 @@ rule r_alpha_stats:
             '{params.group_col}' \
             '{params.covariates}' \
             '{params.out_dir}' \
+            '{params.palette}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/alpha_plots.pdf' '{output.plots}'
         mv '{params.out_dir}/alpha_plots.png' '{output.plots_png}'
@@ -169,6 +171,7 @@ rule r_beta_stats:
         covariates = ",".join(config["analysis"]["covariates"]),
         out_dir    = f"{_STATS}/beta",
         viz_dir    = f"{OUT_VIZ}/diversity",
+        palette    = config.get("plots", {}).get("color_palette", "okabe_ito"),
     log:
         f"{OUT}/logs/r_beta_stats.log",
     shell:
@@ -182,6 +185,7 @@ rule r_beta_stats:
             '{params.group_col}' \
             '{params.covariates}' \
             '{params.out_dir}' \
+            '{params.palette}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/pcoa_plots.pdf' '{output.plots}'
         mv '{params.out_dir}/pcoa_plots.png' '{output.plots_png}'

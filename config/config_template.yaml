@@ -342,3 +342,27 @@ phylogeny:
 #   ancombc_reference_level: "Timepoint::Baseline Sex::Female"
 #   core_prevalence: 0.5
 # =============================================================================
+
+
+# ── Plot color palette ────────────────────────────────────────────────────────
+# Controls the group-level color scheme used across ALL publication plots:
+#   alpha diversity bar charts, PCoA scatter plots, beta diversity boxplots,
+#   composition barplots, and ranked-abundance curves.
+#
+# Uncomment exactly ONE of the lines below. All palettes are colorblind-tested
+# and print correctly in grayscale (Dark2, Okabe-Ito) or at 600 DPI (all).
+#
+# Max groups supported per palette:
+#   okabe_ito (8) · brewer_dark2 (8) · lancet (9) · brewer_set1 (9)
+#   npg (10) · jco (10) · aaas (10) · tableau10 (10)
+#
+# If you have more groups than the max, colors are interpolated automatically.
+plots:
+  color_palette: "okabe_ito"      # [DEFAULT] Wong 2011, Nature Methods *** RECOMMENDED ***
+  # color_palette: "npg"          # Nature Publishing Group style
+  # color_palette: "lancet"       # The Lancet journal style
+  # color_palette: "jco"          # Journal of Clinical Oncology style
+  # color_palette: "aaas"         # Science / AAAS journal style
+  # color_palette: "tableau10"    # Tableau categorical — high-contrast presentations
+  # color_palette: "brewer_dark2" # RColorBrewer Dark2 — print-safe, ≤8 groups
+  # color_palette: "brewer_set1"  # RColorBrewer Set1 — high-contrast, ≤9 groups

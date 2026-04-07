@@ -191,6 +191,7 @@ rule r_composition_plots:
         dual_plots = "true" if config.get("taxa_processing", {}).get("generate_dual_plots", False) else "false",
         out_dir    = _COMP,
         viz_dir    = f"{OUT_VIZ}/composition",
+        palette    = config.get("plots", {}).get("color_palette", "okabe_ito"),
     log:
         f"{OUT}/logs/r_composition_plots.log",
     shell:
@@ -206,6 +207,7 @@ rule r_composition_plots:
             '{params.out_dir}' \
             '{params.strategy}' \
             '{params.dual_plots}' \
+            '{params.palette}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/composition_plots.pdf'              '{output.plots}'
         mv '{params.out_dir}/composition_plots_raw.pdf'          '{output.plots_raw}'
