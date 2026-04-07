@@ -1,0 +1,9 @@
+# QIIME 2 metadata file
+# First column must be #SampleID and must match sample_id values in samples.tsv.
+# Second row (optional): #q2:types defines column types (numeric or categorical).
+# Add as many metadata columns as needed for your study.
+#SampleID	Group	Sex	Age	BodySite
+#q2:types	categorical	categorical	numeric	categorical
+Sample01	Control	Male	25	Gut
+Sample02	Control	Female	30	Gut
+Sample03	Case	Male	28	Gut

@@ -109,6 +109,16 @@ rule all:
         # ── Filtered feature table (no mito/chloro/unassigned) ───────────────────
         f"{OUT}/table_filtered.qza",
         f"{OUT}/exported/feature_table_filtered/feature-table.tsv",
+        # ── Beta PCoA ordinations (used by core_plots) ────────────────────────────
+        expand(f"{OUT}/exported/beta_diversity/{{beta_metric}}/ordination.txt",
+               beta_metric=BETA_METRICS),
+        # ── Bray-Curtis distance matrix (used by core_plots within/between boxplot)
+        f"{OUT}/exported/beta_diversity/bray_curtis/distance_matrix.tsv",
+        # ── Core PNGs (R from exported TSVs — no Docker) ─────────────────────────
+        f"{OUT_VIZ}/qc/dada2_stats.png",
+        f"{OUT_VIZ}/qc/read_depth.png",
+        f"{OUT_VIZ}/taxonomy/taxonomy_barplot.png",
+        f"{OUT_VIZ}/taxonomy/top_taxa_abundance.png",
 # ── Target rule: full extended analysis (A–G) ─────────────────────────────────
 # Run with: snakemake all_extended --cores all --snakefile workflow/Snakefile
 rule all_extended:
@@ -117,23 +127,28 @@ rule all_extended:
         rules.all.input,
         # ─ A: Alpha diversity statistics ──────────────────────────────────
         f"{OUT}/stats/alpha/alpha_statistics.tsv",
+        f"{OUT}/stats/alpha/dunn_posthoc.tsv",
         f"{OUT_VIZ}/diversity/alpha_plots.pdf",        f"{OUT_VIZ}/diversity/alpha_plots.png",        f"{OUT_VIZ}/diversity/alpha_plots_glm.png",        expand(f"{OUT_VIZ}/diversity/{{metric}}_group_significance.qzv",
                metric=ALPHA_METRICS),
-        # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────
+        # ─ B: Beta diversity + PERMANOVA ──────────────────────────────────────
         expand(f"{OUT_VIZ}/diversity/{{beta_metric}}_permanova.qzv",
                beta_metric=BETA_METRICS),
         expand(f"{OUT}/stats/beta/{{beta_metric}}_distance_matrix.tsv",
                beta_metric=["bray_curtis", "weighted_unifrac"]),
         f"{OUT}/stats/beta/permanova_results.tsv",
+        f"{OUT}/stats/beta/permanova_pairwise.tsv",
         f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
         f"{OUT_VIZ}/diversity/pcoa_plots.png",
+        f"{OUT_VIZ}/diversity/permdisp_plots.png",
         # ─ C: Composition analysis ─────────────────────────────────────────
         expand(f"{OUT}/composition/{{level}}_relfreq.tsv", level=COLLAPSE_LEVELS),
         expand(f"{OUT_VIZ}/composition/{{level}}_barplot.qzv", level=COLLAPSE_LEVELS),
         f"{OUT_VIZ}/composition/composition_plots.pdf",
-        f"{OUT_VIZ}/composition/composition_phylum.png",
-        f"{OUT_VIZ}/composition/composition_class.png",
-        f"{OUT_VIZ}/composition/composition_genus.png",
+        f"{OUT_VIZ}/composition/composition_barplot_panel.png",
+        f"{OUT_VIZ}/composition/composition_heatmap_panel.png",
+        f"{OUT_VIZ}/composition/composition_bubble_panel.png",
+        f"{OUT_VIZ}/composition/composition_ranked_panel.png",
+        f"{OUT_VIZ}/composition/composition_prevalence_panel.png",
         *_KRONA_HTMLS,
         # ─ D: Differential abundance ──────────────────────────────────────
         expand(f"{OUT_VIZ}/differential/ancombc_level{{level}}.qzv", level=ANCOMBC_LEVELS),
@@ -152,11 +167,15 @@ rule all_extended:
         f"{OUT}/core_microbiome/core_stats.tsv",
         f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
         f"{OUT_VIZ}/core_microbiome/core_plots.png",
+        f"{OUT_VIZ}/core_microbiome/core_upset.png",
         # ─ G: PICRUSt2 functional prediction ─────────────────────────────
         f"{OUT}/picrust2/pathway_differential.tsv",
+        f"{OUT}/picrust2/nsti_summary.tsv",
         f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
         f"{OUT_VIZ}/picrust2/pathway_plots.png",
+        f"{OUT_VIZ}/picrust2/pathway_plots_heatmap.png",
         f"{OUT_VIZ}/picrust2/pathway_plots_raw.png",
+        f"{OUT_VIZ}/picrust2/pathway_plots_raw_heatmap.png",
         # ─ H: Phylogenetic tree visualizations (ggtree) ───────────────────
         f"{OUT_VIZ}/phylogeny/01_tree_basic.pdf",
         f"{OUT_VIZ}/phylogeny/02_tree_abundance_heatmap.pdf",

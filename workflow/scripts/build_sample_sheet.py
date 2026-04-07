@@ -8,6 +8,17 @@ import sys
 import csv
 import re
 
+def detect_encoding(path):
+    """Detect UTF-16 (Excel) or UTF-8 BOM encodings by inspecting the first bytes."""
+    with open(path, "rb") as f:
+        raw = f.read(4)
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16"
+    if raw[:3] == b"\xef\xbb\xbf":
+        return "utf-8-sig"
+    return "utf-8"
+
+
 def main():
     if len(sys.argv) != 4:
         print(f"Usage: python3 {sys.argv[0]} <metadata.tsv> <fastq_dir> <output_samples.tsv>")
@@ -17,9 +28,13 @@ def main():
     fastq_dir = sys.argv[2]
     out_sheet = sys.argv[3]
 
+    encoding = detect_encoding(metadata_path)
+    if encoding != "utf-8":
+        print(f"Note: Detected {encoding} encoding in {metadata_path} (likely saved from Excel)")
+
     # 1. Read true SampleIDs from metadata
     sample_ids = []
-    with open(metadata_path, "r") as f:
+    with open(metadata_path, "r", encoding=encoding) as f:
         # Sniff delimiter
         first_line = f.readline()
         f.seek(0)

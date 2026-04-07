@@ -1,0 +1,86 @@
+#SampleID	Agemons	Age_Category	Sex	Stunting	Underweight	Wasting	Overweight	Anemia	Caries	Caries_Severity	Nutritional_Status	Nutritional_Status_3Group	Double_Burden	Nutritional_Deficit	Oral_Comorbidity
+#q2:types	numeric	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical	categorical
+KMUN-001	42	42-47 months	M	No	No	Yes	No	No	Yes	Non-severe	Normal	Normal	No	Yes	No
+KMUN-002	48	48-54 months	M	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-003	48	48-54 months	M	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-004	48	48-54 months	F	No	No	No	No	Yes	Yes	Severe	Normal	Normal	No	No	Yes
+KMUN-005	36	36-41 months	F	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-006	48	48-54 months	M	No	No	No	No	No	Yes	Severe	Normal	Normal	No	No	No
+KMUN-007	48	48-54 months	F	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-008	42	42-47 months	F	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-009	48	48-54 months	M	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-010	48	48-54 months	M	No	No	No	No	No	Yes	Severe	Normal	Normal	No	No	No
+KMUN-011	48	48-54 months	M	No	No	No	No	No	Yes	Severe	Normal	Normal	No	No	No
+KMUN-012	48	48-54 months	F	No	No	No	No	Yes	Yes	Severe	Normal	Normal	No	No	Yes
+KMUN-013	48	48-54 months	M	No	No	Yes	No	No	Yes	Non-severe	Normal	Normal	No	Yes	No
+KMUN-014	48	48-54 months	F	No	No	No	No	No	Yes	Severe	Normal	Normal	No	No	No
+KMUN-015	36	36-41 months	F	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-016	48	48-54 months	M	No	No	No	No	Yes	Yes	Non-severe	Normal	Normal	No	No	Yes
+KMUN-018	48	48-54 months	M	No	No	No	No	Yes	No	Caries free	Normal	Normal	No	No	No
+KMUN-019	48	48-54 months	M	No	No	Yes	No	Yes	Yes	Severe	Normal	Normal	No	Yes	Yes
+KMUN-020	36	36-41 months	M	No	No	No	No	Yes	No	Caries free	Normal	Normal	No	No	No
+KMUN-021	48	48-54 months	F	No	No	No	No	No	No	Caries free	Normal	Normal	No	No	No
+KMUN-022	48	48-54 months	M	No	No	No	No	Yes	Yes	Non-severe	Normal	Normal	No	No	Yes
+KMUN-023	36	36-41 months	F	No	No	No	No	Yes	Yes	Non-severe	Normal	Normal	No	No	Yes
+KMUN-024	48	48-54 months	F	No	No	No	No	Yes	No	Caries free	Normal	Normal	No	No	No
+KMUN-025	48	48-54 months	M	No	No	No	No	No	Yes	Non-severe	Normal	Normal	No	No	No
+KMUN-028	48	48-54 months	M	No	No	No	No	No	No	Caries free	Normal	Normal	No	No	No
+KMUN-029	36	36-41 months	F	No	No	No	No	No	No	Caries free	Normal	Normal	No	No	No
+KMUN-030	48	48-54 months	F	No	No	No	No	No	No	Caries free	Normal	Normal	No	No	No
+KMUOB-001	48	48-54 months	M	Yes	No	No	Yes	Yes	Yes	Non-severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-002	42	42-47 months	F	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-003	48	48-54 months	F	Yes	No	No	Yes	Yes	Yes	Non-severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-004	36	36-41 months	M	No	No	No	Yes	Yes	Yes	Non-severe	Overweight	Overweight	No	No	Yes
+KMUOB-005	54	48-54 months	M	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-006	36	36-41 months	F	No	No	No	Yes	Yes	Yes	Non-severe	Overweight	Overweight	No	No	Yes
+KMUOB-007	48	48-54 months	M	No	No	No	Yes	No	Yes	Non-severe	Overweight	Overweight	No	No	No
+KMUOB-008	54	48-54 months	F	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-009	48	48-54 months	M	Yes	No	No	Yes	Yes	Yes	Severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-010	42	42-47 months	F	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-011	48	48-54 months	F	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-012	48	48-54 months	F	Yes	No	No	Yes	Yes	Yes	Non-severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-013	48	48-54 months	M	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-014	54	48-54 months	F	No	No	No	Yes	No	Yes	Non-severe	Overweight	Overweight	No	No	No
+KMUOB-015	36	36-41 months	F	Yes	No	No	Yes	Yes	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-016	48	48-54 months	F	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-017	54	48-54 months	F	No	No	No	Yes	No	Yes	Non-severe	Overweight	Overweight	No	No	No
+KMUOB-018	42	42-47 months	F	Yes	No	No	Yes	Yes	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-019	48	48-54 months	M	Yes	No	No	Yes	Yes	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-020	48	48-54 months	M	Yes	No	No	Yes	No	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-021	48	48-54 months	F	Yes	No	No	Yes	No	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-022	54	48-54 months	M	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-023	48	48-54 months	F	Yes	No	No	Yes	Yes	Yes	Non-severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-024	42	42-47 months	F	Yes	No	No	Yes	No	Yes	Severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-025	48	48-54 months	M	Yes	No	No	Yes	No	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-026	48	48-54 months	M	Yes	No	No	Yes	Yes	Yes	Non-severe	Double_Burden	Overweight	Yes	No	Yes
+KMUOB-027	36	36-41 months	M	Yes	No	No	Yes	No	No	Caries free	Double_Burden	Overweight	Yes	No	No
+KMUOB-028	48	48-54 months	M	No	No	No	Yes	Yes	Yes	Non-severe	Overweight	Overweight	No	No	Yes
+KMUOB-029	48	48-54 months	M	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUOB-030	53	48-54 months	M	Yes	No	No	Yes	No	Yes	Non-severe	Double_Burden	Overweight	Yes	No	No
+KMUS-001	48	48-54 months	M	Yes	Yes	Yes	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-002	48	48-54 months	F	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-003	48	48-54 months	F	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-004	48	48-54 months	M	Yes	Yes	Yes	No	No	Yes	Non-severe	Stunted	Stunted	No	Yes	No
+KMUS-005	36	36-41 months	F	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-006	48	48-54 months	F	Yes	No	No	No	No	No	Caries free	Stunted	Stunted	No	No	No
+KMUS-007	36	36-41 months	F	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-008	36	36-41 months	M	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-009	36	36-41 months	F	Yes	Yes	No	No	Yes	Yes	Severe	Stunted	Stunted	No	Yes	Yes
+KMUS-011	36	36-41 months	M	Yes	No	No	No	Yes	No	Caries free	Stunted	Stunted	No	No	No
+KMUS-012	36	36-41 months	M	Yes	No	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	No	Yes
+KMUS-013	36	36-41 months	M	No	Yes	Yes	No	Yes	No	Caries free	Normal	Normal	No	Yes	No
+KMUS-014	48	48-54 months	F	Yes	Yes	Yes	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-015	36	36-41 months	M	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-016	36	36-41 months	M	Yes	No	No	No	Yes	No	Caries free	Stunted	Stunted	No	No	No
+KMUS-019	36	36-41 months	M	Yes	No	No	No	Yes	No	Caries free	Stunted	Stunted	No	No	No
+KMUS-020	48	48-54 months	M	Yes	No	No	No	Yes	No	Caries free	Stunted	Stunted	No	No	No
+KMUS-021	42	42-47 months	F	Yes	Yes	No	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-022	48	48-54 months	M	Yes	Yes	No	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-023	48	48-54 months	F	Yes	Yes	Yes	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-024	48	48-54 months	F	Yes	Yes	No	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-025	36	36-41 months	M	Yes	Yes	Yes	No	No	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-026	36	36-41 months	F	Yes	Yes	No	No	No	Yes	Non-severe	Stunted	Stunted	No	Yes	No
+KMUS-027	48	48-54 months	F	Yes	Yes	No	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-028	48	48-54 months	F	Yes	Yes	No	No	Yes	Yes	Non-severe	Stunted	Stunted	No	Yes	Yes
+KMUS-029	42	42-47 months	F	Yes	Yes	Yes	No	Yes	No	Caries free	Stunted	Stunted	No	Yes	No
+KMUS-030	48	48-54 months	F	Yes	Yes	No	No	No	No	Caries free	Stunted	Stunted	No	Yes	No

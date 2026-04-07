@@ -24,6 +24,7 @@ rule picrust2_pipeline:
         # PATH UPDATE: PICRUSt2 creates 'EC_metagenome_out' and 'pathways_out'
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv.gz",
         ec       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz",
+        nsti_gz  = f"{_PICRUST}/marker_predicted_and_nsti.tsv.gz",
     params:
         out_dir  = _PICRUST,
         picrust_env = config["picrust"]["env"],
@@ -49,13 +50,16 @@ rule picrust2_decompress:
     input:
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv.gz",
         ec       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz",
+        nsti     = f"{_PICRUST}/marker_predicted_and_nsti.tsv.gz",
     output:
         pathways_tsv = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv",
         ec_tsv       = f"{_PICRUST}/EC_metagenome_out/pred_metagenome_unstrat.tsv",
+        nsti_tsv     = f"{_PICRUST}/marker_predicted_and_nsti.tsv",
     shell:
         """
         gunzip -kf '{input.pathways}'
         gunzip -kf '{input.ec}'
+        gunzip -kf '{input.nsti}'
         """
 
 rule r_picrust2_differential:
@@ -68,16 +72,21 @@ rule r_picrust2_differential:
     input:
         pathways = f"{_PICRUST}/pathways_out/path_abun_unstrat.tsv",
         metadata = config["metadata_file"],
+        nsti_tsv = f"{_PICRUST}/marker_predicted_and_nsti.tsv",
     output:
-        results       = f"{_PICRUST}/pathway_differential.tsv",
-        plots         = f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
-        plots_raw     = f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
-        plots_png     = f"{OUT_VIZ}/picrust2/pathway_plots.png",
-        plots_raw_png = f"{OUT_VIZ}/picrust2/pathway_plots_raw.png",
+        results               = f"{_PICRUST}/pathway_differential.tsv",
+        nsti_summary          = f"{_PICRUST}/nsti_summary.tsv",
+        plots                 = f"{OUT_VIZ}/picrust2/pathway_plots.pdf",
+        plots_raw             = f"{OUT_VIZ}/picrust2/pathway_plots_raw.pdf",
+        plots_png             = f"{OUT_VIZ}/picrust2/pathway_plots.png",
+        plots_raw_png         = f"{OUT_VIZ}/picrust2/pathway_plots_raw.png",
+        plots_heatmap_png     = f"{OUT_VIZ}/picrust2/pathway_plots_heatmap.png",
+        plots_raw_heatmap_png = f"{OUT_VIZ}/picrust2/pathway_plots_raw_heatmap.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
         dual_plots = "true" if config.get("taxa_processing", {}).get("generate_dual_plots", False) else "false",
+        nsti_max   = config.get("picrust", {}).get("nsti_max", 2.0),
         out_dir    = _PICRUST,
         viz_dir    = f"{OUT_VIZ}/picrust2",
     log:
@@ -92,9 +101,13 @@ rule r_picrust2_differential:
             '{params.out_dir}' \
             '{params.strategy}' \
             '{params.dual_plots}' \
+            '{input.nsti_tsv}' \
             2>&1 | tee {log}
-        mv '{params.out_dir}/pathway_plots.pdf'     '{output.plots}'
-        mv '{params.out_dir}/pathway_plots_raw.pdf' '{output.plots_raw}'
-        mv '{params.out_dir}/pathway_plots.png'     '{output.plots_png}'
-        mv '{params.out_dir}/pathway_plots_raw.png' '{output.plots_raw_png}'
+        mv '{params.out_dir}/pathway_plots.pdf'             '{output.plots}'
+        mv '{params.out_dir}/pathway_plots_raw.pdf'         '{output.plots_raw}'
+        mv '{params.out_dir}/pathway_plots.png'             '{output.plots_png}'
+        mv '{params.out_dir}/pathway_plots_raw.png'         '{output.plots_raw_png}'
+        mv '{params.out_dir}/pathway_plots_heatmap.png'     '{output.plots_heatmap_png}'
+        mv '{params.out_dir}/pathway_plots_raw_heatmap.png' '{output.plots_raw_heatmap_png}'
+        [ -f '{params.out_dir}/nsti_summary.tsv' ] && mv '{params.out_dir}/nsti_summary.tsv' '{output.nsti_summary}' || touch '{output.nsti_summary}'
         """

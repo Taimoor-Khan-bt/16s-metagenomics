@@ -114,9 +114,10 @@ rule r_alpha_stats:
         ),
         metadata  = config["metadata_file"],
     output:
-        stats        = f"{_STATS}/alpha/alpha_statistics.tsv",
-        plots        = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
-        plots_png    = f"{OUT_VIZ}/diversity/alpha_plots.png",
+        stats         = f"{_STATS}/alpha/alpha_statistics.tsv",
+        dunn_tsv      = f"{_STATS}/alpha/dunn_posthoc.tsv",
+        plots         = f"{OUT_VIZ}/diversity/alpha_plots.pdf",
+        plots_png     = f"{OUT_VIZ}/diversity/alpha_plots.png",
         plots_glm_png = f"{OUT_VIZ}/diversity/alpha_plots_glm.png",
     params:
         group_col  = config["analysis"]["group_column"],
@@ -138,7 +139,8 @@ rule r_alpha_stats:
             2>&1 | tee {log}
         mv '{params.out_dir}/alpha_plots.pdf' '{output.plots}'
         mv '{params.out_dir}/alpha_plots.png' '{output.plots_png}'
-        mv '{params.out_dir}/alpha_plots_glm.png' '{output.plots_glm_png}'
+        [ -f '{params.out_dir}/alpha_plots_glm.png' ] && mv '{params.out_dir}/alpha_plots_glm.png' '{output.plots_glm_png}' || touch '{output.plots_glm_png}'
+        [ -f '{params.out_dir}/dunn_posthoc.tsv' ] && mv '{params.out_dir}/dunn_posthoc.tsv' '{output.dunn_tsv}' || touch '{output.dunn_tsv}'
         """
 
 
@@ -157,9 +159,11 @@ rule r_beta_stats:
         bray_dm     = f"{_STATS}/beta/bray_curtis_distance_matrix.tsv",
         wunifrac_dm = f"{_STATS}/beta/weighted_unifrac_distance_matrix.tsv",
     output:
-        permanova = f"{_STATS}/beta/permanova_results.tsv",
-        plots     = f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
-        plots_png = f"{OUT_VIZ}/diversity/pcoa_plots.png",
+        permanova    = f"{_STATS}/beta/permanova_results.tsv",
+        pairwise_tsv = f"{_STATS}/beta/permanova_pairwise.tsv",
+        permdisp_png = f"{OUT_VIZ}/diversity/permdisp_plots.png",
+        plots        = f"{OUT_VIZ}/diversity/pcoa_plots.pdf",
+        plots_png    = f"{OUT_VIZ}/diversity/pcoa_plots.png",
     params:
         group_col  = config["analysis"]["group_column"],
         covariates = ",".join(config["analysis"]["covariates"]),
@@ -181,6 +185,8 @@ rule r_beta_stats:
             2>&1 | tee {log}
         mv '{params.out_dir}/pcoa_plots.pdf' '{output.plots}'
         mv '{params.out_dir}/pcoa_plots.png' '{output.plots_png}'
+        [ -f '{params.out_dir}/permdisp_plots.png' ] && mv '{params.out_dir}/permdisp_plots.png' '{output.permdisp_png}' || touch '{output.permdisp_png}'
+        [ -f '{params.out_dir}/permanova_pairwise.tsv' ] && mv '{params.out_dir}/permanova_pairwise.tsv' '{output.pairwise_tsv}' || touch '{output.pairwise_tsv}'
         """
 
 
@@ -224,12 +230,14 @@ rule r_core_microbiome:
         stats     = f"{_CORE}/core_stats.tsv",
         plots     = f"{OUT_VIZ}/core_microbiome/core_plots.pdf",
         plots_png = f"{OUT_VIZ}/core_microbiome/core_plots.png",
+        upset_png = f"{OUT_VIZ}/core_microbiome/core_upset.png",
     params:
-        group_col  = config["analysis"]["group_column"],
-        prevalence = config["analysis"]["core_prevalence"],
-        tax_level  = config.get("analysis", {}).get("core_taxonomy_level", "ASV"),
-        out_dir    = _CORE,
-        viz_dir    = f"{OUT_VIZ}/core_microbiome",
+        group_col     = config["analysis"]["group_column"],
+        prevalence    = config["analysis"]["core_prevalence"],
+        tax_level     = config.get("analysis", {}).get("core_taxonomy_level", "ASV"),
+        min_abundance = config.get("analysis", {}).get("core_min_abundance", 0.001),
+        out_dir       = _CORE,
+        viz_dir       = f"{OUT_VIZ}/core_microbiome",
     log:
         f"{OUT}/logs/r_core_microbiome.log",
     shell:
@@ -243,7 +251,9 @@ rule r_core_microbiome:
             '{params.prevalence}' \
             '{params.out_dir}' \
             '{params.tax_level}' \
+            '{params.min_abundance}' \
             2>&1 | tee {log}
         mv '{params.out_dir}/core_plots.pdf' '{output.plots}'
         [ -f '{params.out_dir}/core_plots.png' ] && mv '{params.out_dir}/core_plots.png' '{output.plots_png}' || touch '{output.plots_png}'
+        [ -f '{params.out_dir}/core_upset.png' ] && mv '{params.out_dir}/core_upset.png' '{output.upset_png}' || touch '{output.upset_png}'
         """

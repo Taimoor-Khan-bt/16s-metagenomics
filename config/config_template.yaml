@@ -109,6 +109,8 @@ diversity:
     - shannon            # Shannon entropy (richness + evenness, log base 2)
     - evenness           # Pielou's J (how evenly reads are spread across ASVs)
     - observed_features  # Count of distinct ASVs per sample
+    - simpson            # Simpson Diversity Index (1 - D); range 0–1
+    - chao1              # Chao1 Richness Estimator (accounts for rare singletons)
 
   # [OPTIONAL] Beta diversity metrics to compute.
   # Phylogeny-aware metrics (unifrac) require rooted_tree.qza.
@@ -201,6 +203,19 @@ analysis:
   # 0.8 = present in ≥80% of samples (stringent)
   core_prevalence: 0.5
 
+  # [OPTIONAL] Minimum mean relative abundance for core microbiome membership.
+  # Applied in addition to core_prevalence: an ASV must be both prevalent AND
+  # abundant enough to be considered core. 0.001 = 0.1% mean relative abundance.
+  # Set to 0 to disable the abundance filter (prevalence only).
+  core_min_abundance: 0.001
+
+  # [OPTIONAL] Label used in core_stats.tsv and plot subtitles to describe the
+  # taxonomy resolution at which the core microbiome analysis is performed.
+  # The analysis always runs at the ASV level (no taxonomy collapse).
+  # Change this string to match how you describe the comparison in your paper,
+  # e.g. "ASV", "Genus (ASV-level table)", "Species (SILVA 138.1)".
+  core_taxonomy_level: "ASV"
+
 
 # ── PICRUSt2 functional prediction ───────────────────────────────────────────
 # PICRUSt2 predicts MetaCyc pathway abundances from the ASV table using
@@ -210,6 +225,13 @@ picrust:
   # Create it with:
   #   mamba create -n picrust2 -c conda-forge -c bioconda picrust2 -y
   env: "picrust2"
+
+  # [OPTIONAL] Maximum mean NSTI score allowed per sample.
+  # Samples with mean NSTI >= nsti_max are excluded from pathway analysis.
+  # NSTI (Nearest-Sequenced Taxon Index) measures prediction reliability;
+  # values >= 2.0 indicate unreliable PICRUSt2 functional predictions.
+  # Set to null or omit to skip NSTI filtering.
+  nsti_max: 2.0
 
 
 # ── Krona interactive visualization ───────────────────────────────────────────

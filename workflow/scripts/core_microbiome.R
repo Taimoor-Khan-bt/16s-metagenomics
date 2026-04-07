@@ -21,6 +21,7 @@ group_col  <- args[4]
 prevalence <- as.numeric(args[5])
 out_dir    <- args[6]
 tax_level  <- if (length(args) >= 7 && nchar(trimws(args[7])) > 0) args[7] else "ASV"
+min_abundance <- if (length(args) >= 8 && nchar(trimws(args[8])) > 0) as.numeric(args[8]) else 0.001
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -41,16 +42,36 @@ if (length(common_samples) < 2) stop("Fewer than 2 common samples.")
 tab  <- tab[, common_samples, drop = FALSE]
 meta <- meta[common_samples, , drop = FALSE]
 grp  <- as.factor(meta[[group_col]])
+# Dark palette (consistent with alpha/beta scripts)
 grp_levels <- levels(grp)
+dark_pal_c    <- c("#1B4F72","#922B21","#1D8348","#6C3483","#784212",
+                   "#0E6655","#4A235A","#1A5276","#7D6608","#212F3D")
+dark_colors_c <- setNames(dark_pal_c[seq_along(grp_levels)], grp_levels)
+grp_display_c <- tools::toTitleCase(gsub("_", " ", group_col))
 
-# ── 3. Identify Core Taxa per Group ──────────────────────────────────────────
+bold_theme_c <- theme_bw(base_size = 13) +
+  theme(
+    legend.position    = "right",
+    legend.title       = element_text(face = "bold", size = 12),
+    legend.text        = element_text(face = "bold", size = 11),
+    axis.title         = element_text(face = "bold", size = 12),
+    axis.text          = element_text(face = "bold", size = 11, color = "black"),
+    plot.title         = element_text(face = "bold", size = 13),
+    panel.grid.major.y = element_blank()
+  )
+
+# ── 3. Identify Core Taxa per Group ───────────────────────────────────────
 core_ids <- list()
 for (g in grp_levels) {
   samp_g    <- common_samples[grp == g]
   tab_g     <- tab[, samp_g, drop = FALSE]
   prev_g    <- rowSums(tab_g > 0) / ncol(tab_g)
-  core_ids[[g]] <- names(prev_g[prev_g >= prevalence])
-  message("Group ", g, ": ", length(core_ids[[g]]), " core features.")
+  # Per-ASV mean relative abundance within group
+  colsums_g   <- colSums(tab_g)
+  rel_abund_g <- rowMeans(sweep(tab_g, 2, pmax(colsums_g, 1), "/"))
+  core_ids[[g]] <- names(prev_g[prev_g >= prevalence & rel_abund_g >= min_abundance])
+  message("Group ", g, ": ", length(core_ids[[g]]), " core features ",
+          "(prevalence >= ", prevalence, ", mean rel. abundance >= ", min_abundance, ").")
 }
 
 all_core_ids <- unique(unlist(core_ids))
@@ -140,6 +161,36 @@ make_unique_labels <- function(ids, taxa) {
 
 pdf(file.path(out_dir, "core_plots.pdf"), width = 13, height = 8)
 
+# ── LEfSe cross-reference (optional, additive only) ────────────────────────
+lefse_differential_ids <- character(0)
+tryCatch({
+  lefse_file <- file.path(dirname(out_dir), "differential", "lefse_results.tsv")
+  if (file.exists(lefse_file)) {
+    lefse_df <- read.table(lefse_file, header = TRUE, sep = "\t",
+                           stringsAsFactors = FALSE, check.names = FALSE)
+    # LEfSe 'feature' column contains taxonomy strings; match last word of taxon
+    if ("feature" %in% colnames(lefse_df) && exists("stats_df") && nrow(stats_df) > 0) {
+      da_features <- unique(lefse_df$feature[!is.na(lefse_df$feature)])
+      for (tx_id in stats_df$FeatureID) {
+        taxon_str   <- stats_df$Taxon[stats_df$FeatureID == tx_id][1]
+        last_word   <- tail(trimws(strsplit(taxon_str, "[; ]+")[[1]]), 1)
+        if (any(sapply(da_features, function(f) grepl(last_word, f, ignore.case = TRUE)))) {
+          lefse_differential_ids <- c(lefse_differential_ids, tx_id)
+        }
+      }
+      if (length(lefse_differential_ids) > 0 && exists("stats_df")) {
+        stats_df$is_differential <- stats_df$FeatureID %in% lefse_differential_ids
+        write.table(stats_df, file.path(out_dir, "core_stats.tsv"),
+                    sep = "\t", quote = FALSE, row.names = FALSE)
+        message("LEfSe cross-reference: ", sum(stats_df$is_differential),
+                " core taxa flagged as differentially abundant.")
+      }
+    }
+  }
+}, error = function(e) {
+  message("LEfSe cross-reference skipped: ", e$message)
+})
+
 # ── Page 1: Prevalence barplot + significance annotation ─────────────────────
 if (exists("stats_df") && nrow(stats_df) > 0) {
   # Build per-group prevalence data
@@ -163,7 +214,17 @@ if (exists("stats_df") && nrow(stats_df) > 0) {
   prev_df$ShortName <- id_to_label[prev_df$FeatureID]
   prev_df$Significant <- ifelse(!is.na(prev_df$p_adj) & prev_df$p_adj < 0.05,
                                 "p_adj < 0.05", "p_adj ≥ 0.05")
-
+  # Annotate LEfSe-flagged taxa with " ★" on y-axis
+  if (length(lefse_differential_ids) > 0) {
+    prev_df$ShortName <- ifelse(
+      prev_df$FeatureID %in% lefse_differential_ids,
+      paste0(prev_df$ShortName, " \u2605"),
+      prev_df$ShortName
+    )
+    id_to_label[lefse_differential_ids] <- paste0(
+      id_to_label[lefse_differential_ids], " \u2605"
+    )
+  }
   # Build label: show p_adj once per taxon (on the group with highest prevalence)
   label_df <- prev_df[ave(prev_df$Prevalence, prev_df$FeatureID, FUN = max) ==
                         prev_df$Prevalence, ]
@@ -193,19 +254,21 @@ if (exists("stats_df") && nrow(stats_df) > 0) {
                        expand = c(0, 0)) +
     scale_color_manual(values = c("p_adj < 0.05" = "#C62828", "p_adj \u2265 0.05" = "grey50"),
                        name = "Significance") +
-    scale_fill_brewer(palette = "Set2", name = group_col) +
-    theme_bw(base_size = 11) +
-    theme(legend.position   = "right",
-          axis.text.y       = element_text(size = 9),
-          panel.grid.major.y = element_blank()) +
+    scale_fill_manual(values = dark_colors_c, name = grp_display_c) +
+    bold_theme_c +
     labs(x     = paste0("Prevalence (dashed = ", prevalence * 100, "% threshold)"),
          y     = "Taxon",
          title = paste("Core Microbiome Prevalence by", group_col),
-         subtitle = paste0("Taxa present in \u2265", prevalence * 100,
-                           "% of samples in at least one group  |  ",
-                           "Taxonomy level: ", tax_level, "  |  ",
-                           sum(!is.na(stats_df$p_adj) & stats_df$p_adj < 0.05),
-                           " taxa with p_adj < 0.05"))
+         subtitle = paste0(
+           "Taxa present in \u2265", prevalence * 100,
+           "% of samples AND mean rel. abundance \u2265", min_abundance * 100, "%",
+           " in at least one group  |  Taxonomy level: ", tax_level, "  |  ",
+           sum(!is.na(stats_df$p_adj) & stats_df$p_adj < 0.05),
+           " taxa with p_adj < 0.05",
+           if (length(lefse_differential_ids) > 0)
+             paste0("  |  \u2605 = also differentially abundant (LEfSe)")
+           else ""
+         ))
   print(p1)
 }
 
@@ -214,7 +277,8 @@ if (requireNamespace("UpSetR", quietly = TRUE) && length(grp_levels) > 1) {
   upset_list <- lapply(core_ids, function(ids) if (length(ids) > 0) ids else character(0))
   if (sum(sapply(upset_list, length)) > 0) {
     print(UpSetR::upset(UpSetR::fromList(upset_list), order.by = "freq",
-                        main.bar.color = "steelblue", sets.bar.color = "darkgreen",
+                        main.bar.color = "#1B4F72", sets.bar.color = "#922B21",
+                        matrix.color = "#2C3E50",
                         text.scale = 1.4))
   }
 }
@@ -225,4 +289,28 @@ if (exists("p1")) {
          plot = p1, width = 13, height = 8, units = "in", dpi = 600)
   message("Saved: core_plots.png (600 DPI)")
 }
+
+# ── Save UpSetR intersection diagram as a separate PNG ───────────────────────
+if (requireNamespace("UpSetR", quietly = TRUE) && length(grp_levels) > 1) {
+  upset_list <- lapply(core_ids, function(ids) if (length(ids) > 0) ids else character(0))
+  if (sum(sapply(upset_list, length)) > 0) {
+    grDevices::png(file.path(out_dir, "core_upset.png"),
+                   width = 13, height = 8, units = "in", res = 600)
+    UpSetR::upset(UpSetR::fromList(upset_list), order.by = "freq",
+                  main.bar.color = "#1B4F72", sets.bar.color = "#922B21",
+                  matrix.color = "#2C3E50",
+                  text.scale = 1.4)
+    grDevices::dev.off()
+    message("Saved: core_upset.png (600 DPI)")
+  } else {
+    grDevices::png(file.path(out_dir, "core_upset.png"), width = 800, height = 400, res = 96)
+    graphics::plot.new(); graphics::title("No shared core taxa between groups")
+    grDevices::dev.off()
+  }
+} else {
+  grDevices::png(file.path(out_dir, "core_upset.png"), width = 800, height = 400, res = 96)
+  graphics::plot.new(); graphics::title("UpSetR not available or single group")
+  grDevices::dev.off()
+}
+
 message("Saved: core_plots.pdf")

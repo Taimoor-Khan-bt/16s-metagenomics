@@ -1,7 +1,7 @@
-# Sample sheet — one row per sample
-# Columns: sample_id (must match #SampleID in metadata.tsv), r1 (forward reads), r2 (reverse reads)
-# Paths may be absolute or relative to the project root.
+# Auto-generated sample sheet
+# sample_id	r1	r2
 sample_id	r1	r2
-Sample01	data/raw/Sample01_R1.fastq.gz	data/raw/Sample01_R2.fastq.gz
-Sample02	data/raw/Sample02_R1.fastq.gz	data/raw/Sample02_R2.fastq.gz
-Sample03	data/raw/Sample03_R1.fastq.gz	data/raw/Sample03_R2.fastq.gz
+KMUOB-001	data/habib/test/KMUOB-001-LGJ3963-Z1_L1_1.fq.gz	data/habib/test/KMUOB-001-LGJ3963-Z1_L1_2.fq.gz
+KMUOB-002	data/habib/test/KMUOB-002A-LFM4840_L2_1.fq.gz	data/habib/test/KMUOB-002A-LFM4840_L2_2.fq.gz
+KMUOB-004	data/habib/test/KMUOB-004A-LFM4844_L2_1.fq.gz	data/habib/test/KMUOB-004A-LFM4844_L2_2.fq.gz
+KMUOB-006	data/habib/test/KMUOB-006-LFM4847_L2_1.fq.gz	data/habib/test/KMUOB-006-LFM4847_L2_2.fq.gz

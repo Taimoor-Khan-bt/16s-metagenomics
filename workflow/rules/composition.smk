@@ -172,16 +172,19 @@ rule r_composition_plots:
     R packages required: ggplot2, dplyr, tidyr, scales, RColorBrewer
     """
     input:
-        phylum_tsv = f"{_COMP}/2_relfreq.tsv",
-        class_tsv  = f"{_COMP}/3_relfreq.tsv",
-        genus_tsv  = f"{_COMP}/6_relfreq.tsv",
-        metadata   = config["metadata_file"],
+        phylum_tsv  = f"{_COMP}/2_relfreq.tsv",
+        class_tsv   = f"{_COMP}/3_relfreq.tsv",
+        genus_tsv   = f"{_COMP}/6_relfreq.tsv",
+        species_tsv = f"{_COMP}/7_relfreq.tsv",
+        metadata    = config["metadata_file"],
     output:
-        plots      = f"{OUT_VIZ}/composition/composition_plots.pdf",
-        plots_raw  = f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
-        phylum_png = f"{OUT_VIZ}/composition/composition_phylum.png",
-        class_png  = f"{OUT_VIZ}/composition/composition_class.png",
-        genus_png  = f"{OUT_VIZ}/composition/composition_genus.png",
+        plots                   = f"{OUT_VIZ}/composition/composition_plots.pdf",
+        plots_raw               = f"{OUT_VIZ}/composition/composition_plots_raw.pdf",
+        barplot_panel_png       = f"{OUT_VIZ}/composition/composition_barplot_panel.png",
+        heatmap_panel_png       = f"{OUT_VIZ}/composition/composition_heatmap_panel.png",
+        bubble_panel_png        = f"{OUT_VIZ}/composition/composition_bubble_panel.png",
+        ranked_panel_png        = f"{OUT_VIZ}/composition/composition_ranked_panel.png",
+        prevalence_panel_png    = f"{OUT_VIZ}/composition/composition_prevalence_panel.png",
     params:
         group_col  = config["analysis"]["group_column"],
         strategy   = config.get("taxa_processing", {}).get("strategy", "rename"),
@@ -197,15 +200,18 @@ rule r_composition_plots:
             '{input.phylum_tsv}' \
             '{input.class_tsv}' \
             '{input.genus_tsv}' \
+            '{input.species_tsv}' \
             '{input.metadata}' \
             '{params.group_col}' \
             '{params.out_dir}' \
             '{params.strategy}' \
             '{params.dual_plots}' \
             2>&1 | tee {log}
-        mv '{params.out_dir}/composition_plots.pdf'     '{output.plots}'
-        mv '{params.out_dir}/composition_plots_raw.pdf' '{output.plots_raw}'
-        mv '{params.out_dir}/composition_phylum.png'    '{output.phylum_png}'
-        mv '{params.out_dir}/composition_class.png'     '{output.class_png}'
-        mv '{params.out_dir}/composition_genus.png'     '{output.genus_png}'
+        mv '{params.out_dir}/composition_plots.pdf'              '{output.plots}'
+        mv '{params.out_dir}/composition_plots_raw.pdf'          '{output.plots_raw}'
+        mv '{params.out_dir}/composition_barplot_panel.png'      '{output.barplot_panel_png}'
+        mv '{params.out_dir}/composition_heatmap_panel.png'      '{output.heatmap_panel_png}'
+        mv '{params.out_dir}/composition_bubble_panel.png'       '{output.bubble_panel_png}'
+        mv '{params.out_dir}/composition_ranked_panel.png'       '{output.ranked_panel_png}'
+        mv '{params.out_dir}/composition_prevalence_panel.png'   '{output.prevalence_panel_png}'
         """

@@ -25,6 +25,7 @@ output/
 !output/.gitkeep
 
 # Log files
+.snakemake/
 *.log
 analysis_final.log
 analysis_debug.log

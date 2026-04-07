@@ -187,3 +187,58 @@ rule export_filtered_feature_table:
             --to-tsv \
             2>&1 | tee -a {log}
         """
+
+
+# ── Beta diversity PCoA ordinations (scikit-bio ordination.txt) ───────────────
+
+rule export_beta_pcoa:
+    """
+    Export each beta diversity PCoA result to scikit-bio ordination.txt format.
+    R core_plots.R reads the 'Site' block for sample coordinates and
+    'Proportion explained' for axis labels.
+    """
+    input:
+        pcoa = f"{_CORE_DIV}/{{beta_metric}}_pcoa_results.qza",
+    output:
+        ordination = f"{_EXP}/beta_diversity/{{beta_metric}}/ordination.txt",
+    params:
+        docker  = DOCKER,
+        out_dir = f"{_EXP}/beta_diversity/{{beta_metric}}",
+    log:
+        f"{OUT}/logs/export_beta_pcoa_{{beta_metric}}.log",
+    shell:
+        """
+        mkdir -p $(dirname {log}) '{params.out_dir}'
+        {params.docker} qiime tools export \
+            --input-path  '{input.pcoa}' \
+            --output-path '{params.out_dir}' \
+            2>&1 | tee {log}
+        """
+
+
+# ── Bray-Curtis distance matrix (TSV) — needed for within/between boxplot ─────
+
+rule export_beta_dm:
+    """
+    Export the Bray-Curtis distance matrix QZA to a flat TSV.
+    R core_plots.R reads this to compute within-group vs between-group
+    pairwise Bray-Curtis dissimilarities (Panel C of the beta overview).
+    """
+    input:
+        dm = f"{_CORE_DIV}/bray_curtis_distance_matrix.qza",
+    output:
+        tsv = f"{_EXP}/beta_diversity/bray_curtis/distance_matrix.tsv",
+    params:
+        docker  = DOCKER,
+        out_dir = f"{_EXP}/beta_diversity/bray_curtis/dm_export",
+    log:
+        f"{OUT}/logs/export_bray_dm.log",
+    shell:
+        """
+        mkdir -p $(dirname {log}) '{params.out_dir}'
+        {params.docker} qiime tools export \
+            --input-path  '{input.dm}' \
+            --output-path '{params.out_dir}' \
+            2>&1 | tee {log}
+        mv '{params.out_dir}/distance-matrix.tsv' '{output.tsv}'
+        """
